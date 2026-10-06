@@ -1,0 +1,136 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AOAHID_REPOSITORY: nemarpuc/libaoahid
+  # Changing the tag means changing the hashes in the matrix below too.
+  AOAHID_TAG: v4.1.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+            aoahid_sha256: 94756cec843f886d907daed28aa26bbc57cd7f4874e1a25fb1693f21486351b1
+          - os: windows-2022
+            platform: windows
+            aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+            aoahid_sha256: 56bd8fc7c352f9919446b5aef7e3b247f2366746c15cf3e5ec5295fc49fe3268
+          - os: macos-15
+            platform: macos
+            aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
+            aoahid_sha256: 8798a5c7e2ec85c2ab3ef88cc14105b3f87c31e50a9c848eea2b9f8793a77cca
+          - os: macos-15-intel
+            platform: macos
+            aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
+            aoahid_sha256: e49e482b19a6efc9a999cb20161b4bd72d42aaf7aab48e754ad5812a1592e726
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build pkg-config \
+            libwayland-dev libwayland-bin libdbus-1-dev libei-dev \
+            libxcb1-dev libxcb-xfixes0-dev libxcb-xinput-dev libxcb-randr0-dev \
+            libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxi-dev libxext-dev libgl1-mesa-dev xvfb libgl1-mesa-dri libegl1
+
+      - name: Download libaoahid release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dependencies
+          gh release download "$AOAHID_TAG" --repo "$AOAHID_REPOSITORY" \
+            --pattern '${{ matrix.aoahid_asset }}' --dir dependencies
+          cd dependencies
+          shopt -s nullglob
+          archives=(${{ matrix.aoahid_asset }})
+          shopt -u nullglob
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one matching asset, found ${#archives[@]}."
+            exit 1
+          fi
+          # Checked against the hash pinned in this file, not one fetched
+          # from the same place as the archive.
+          if command -v sha256sum > /dev/null; then
+            echo "${{ matrix.aoahid_sha256 }}  ${archives[0]}" | sha256sum -c -
+          else
+            echo "${{ matrix.aoahid_sha256 }}  ${archives[0]}" | shasum -a 256 -c -
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            unzip -q "${archives[0]}"
+          else
+            tar -xzf "${archives[0]}"
+          fi
+          base="${archives[0]%.tar.gz}"
+          base="${base%.zip}"
+          if [ ! -f "$base/lib/cmake/aoahid/aoahid-config.cmake" ]; then
+            echo "::error::$base does not look like a libaoahid CMake package."
+            exit 1
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            prefix="$(cygpath -m "$PWD/$base")"
+          else
+            prefix="$PWD/$base"
+          fi
+          echo "AOAHID_PREFIX=$prefix" >> "$GITHUB_ENV"
+
+      - name: Configure
+        shell: bash
+        run: |
+          werror=OFF
+          if [ "${{ matrix.platform }}" = "linux" ]; then werror=ON; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX" -DAOAHID_SHARE_WERROR=$werror
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure -C Release
+
+      - name: Smoke test the binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            out=build/out/Release
+            exe=".exe"
+            # The libaoahid DLLs have to be next to the programs.
+            cp "$AOAHID_PREFIX"/bin/*.dll "$out"/
+          else
+            out=build/out
+            exe=""
+            export LD_LIBRARY_PATH="$AOAHID_PREFIX/lib"
+            export DYLD_LIBRARY_PATH="$AOAHID_PREFIX/lib"
+          fi
+          "$out/aoahid_share$exe" --version
+          test -f "$out/aoahid_share_daemon$exe"
+          # With no daemon running, a command has to fail with a message.
+          if "$out/aoahid_share$exe" status 2> out.txt; then
+            echo "::error::status succeeded without a daemon"; exit 1
+          fi
+          grep -q "not running" out.txt

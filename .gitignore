@@ -1,0 +1,20 @@
+# Build outputs
+build/
+*.o
+*.obj
+*.exe
+.cache/
+CMakeUserPresets.json
+compile_commands.json
+
+# Release archives made locally
+aoahid-share-*.tar.gz
+aoahid-share-*.zip
+
+# IDE / editor / OS
+.vscode/
+.vs/
+.idea/
+*.user
+.DS_Store
+Thumbs.db

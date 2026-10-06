@@ -1,0 +1,177 @@
+name: release
+
+# Builds the archives for a version tag and publishes them as a GitHub
+# release. Tag only a commit whose ci run passed.
+on:
+  push:
+    tags:
+      - "v*"
+  # Run by hand, it builds and uploads the archives but publishes nothing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AOAHID_REPOSITORY: nemarpuc/libaoahid
+  # Changing the tag means changing the hashes in the matrix below too.
+  AOAHID_TAG: v4.1.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            name: linux-x86_64
+            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+            aoahid_sha256: 94756cec843f886d907daed28aa26bbc57cd7f4874e1a25fb1693f21486351b1
+          - os: windows-2022
+            platform: windows
+            name: windows-x86_64
+            aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+            aoahid_sha256: 56bd8fc7c352f9919446b5aef7e3b247f2366746c15cf3e5ec5295fc49fe3268
+          - os: macos-15
+            platform: macos
+            name: macos-arm64
+            aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
+            aoahid_sha256: 8798a5c7e2ec85c2ab3ef88cc14105b3f87c31e50a9c848eea2b9f8793a77cca
+          - os: macos-15-intel
+            platform: macos
+            name: macos-x86_64
+            aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
+            aoahid_sha256: e49e482b19a6efc9a999cb20161b4bd72d42aaf7aab48e754ad5812a1592e726
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build pkg-config \
+            libwayland-dev libwayland-bin libdbus-1-dev libei-dev \
+            libxcb1-dev libxcb-xfixes0-dev libxcb-xinput-dev libxcb-randr0-dev \
+            libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxi-dev libxext-dev libgl1-mesa-dev
+
+      - name: Download libaoahid release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dependencies
+          gh release download "$AOAHID_TAG" --repo "$AOAHID_REPOSITORY" \
+            --pattern '${{ matrix.aoahid_asset }}' --dir dependencies
+          cd dependencies
+          shopt -s nullglob
+          archives=(${{ matrix.aoahid_asset }})
+          shopt -u nullglob
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one matching asset, found ${#archives[@]}."
+            exit 1
+          fi
+          # Checked against the hash pinned in this file, not one fetched
+          # from the same place as the archive.
+          if command -v sha256sum > /dev/null; then
+            echo "${{ matrix.aoahid_sha256 }}  ${archives[0]}" | sha256sum -c -
+          else
+            echo "${{ matrix.aoahid_sha256 }}  ${archives[0]}" | shasum -a 256 -c -
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            unzip -q "${archives[0]}"
+          else
+            tar -xzf "${archives[0]}"
+          fi
+          base="${archives[0]%.tar.gz}"
+          base="${base%.zip}"
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            prefix="$(cygpath -m "$PWD/$base")"
+          else
+            prefix="$PWD/$base"
+          fi
+          echo "AOAHID_PREFIX=$prefix" >> "$GITHUB_ENV"
+
+      - name: Build and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$AOAHID_PREFIX"
+          cmake --build build --config Release --parallel
+          ctest --test-dir build --output-on-failure -C Release
+
+      - name: Package
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${REF_NAME#v}"
+            # The tag has to be the version the build files carry.
+            grep -q "project(aoahid_share VERSION ${version} " CMakeLists.txt
+          else
+            version="$(sed -n 's/^project(aoahid_share VERSION \([0-9.]*\) .*/\1/p' CMakeLists.txt)"
+          fi
+          stage="aoahid-share-${version}-${{ matrix.name }}"
+          cmake --install build --config Release --prefix "$stage"
+          # The libaoahid runtime goes next to the programs, which look there.
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp "$AOAHID_PREFIX"/bin/*.dll "$stage/bin/"
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            cp -a "$AOAHID_PREFIX"/lib/libaoahid*.dylib "$stage/bin/"
+          else
+            cp -a "$AOAHID_PREFIX"/lib/libaoahid.so* "$stage/bin/"
+          fi
+          mkdir -p "$stage/licenses"
+          cp README.md CHANGELOG.md LICENSE "$stage/"
+          cp -R docs "$stage/docs"
+          cp third_party/licenses/* "$stage/licenses/"
+          cp -R "$AOAHID_PREFIX"/share/doc/libaoahid "$stage/licenses/libaoahid" 2> /dev/null || true
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            7z a -tzip "$stage.zip" "$stage" > /dev/null
+          else
+            tar -czf "$stage.tar.gz" "$stage"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            aoahid-share-*.tar.gz
+            aoahid-share-*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    # Only the push of a version tag publishes; a run started by hand never
+    # does, whatever ref it was started on.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd artifacts
+          sha256sum aoahid-share-* > SHA256SUMS
+          version="${REF_NAME#v}"
+          # The notes are this version's section of the changelog.
+          awk -v v="## ${version}" '$0 == v {on = 1; next} /^## / {on = 0} on' \
+            ../CHANGELOG.md > notes.md
+          gh release create "$REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$REF_NAME" \
+            --notes-file notes.md aoahid-share-* SHA256SUMS

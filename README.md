@@ -63,10 +63,11 @@ On GNOME and KDE the desktop asks once for permission to capture input.
 
 `aoahid_share_gui` does the same from a window, in black and white, laid out
 like a device manager: the computer is listed on the left, and once the daemon
-runs (the button at the bottom left starts it) the devices too. The buttons
-under the list search for devices again and connect or disconnect the one that
-is chosen (for the computer: disconnect every device, stop the daemon). Apply
-and Discard changes are at the bottom right. On the right each setting
+runs (the button at the bottom left starts it) the devices too. The refresh
+icon at the top right of the device list rescans for devices, and the buttons
+under the list connect or disconnect the one that is chosen (for the computer:
+disconnect every device, stop the daemon). Apply and Discard changes are at the
+bottom right. On the right each setting
 is a row, its name at the left and its control (a switch, a drop-down, a field)
 at the right edge. A device has the tabs Device (name, in use, keyboard, ADB
 proxy), Placement (drag it around your monitors, or say which side of what it

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "look.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 // The UI font, compiled in (see CMakeLists.txt).
@@ -186,6 +188,35 @@ void draw_text_ellipsized(ImDrawList* const list, const ImVec2 pos, const ImU32 
         --low;
     const std::string cut = std::string(text, low) + ellipsis;
     list->AddText(pos, colour, cut.c_str());
+}
+
+bool icon_button_refresh(const char* const id, const char* const tooltip) {
+    const float side = ImGui::GetFrameHeight();
+    const ImVec2 size(side, side);
+    ImGui::PushStyleColor(ImGuiCol_Border, colour(paper));
+    const bool pressed = ImGui::Button(id, size);
+    ImGui::PopStyleColor();
+    if (tooltip != nullptr && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tooltip);
+
+    const ImVec2 p_min = ImGui::GetItemRectMin();
+    const ImVec2 p_max = ImGui::GetItemRectMax();
+    const ImVec2 c((p_min.x + p_max.x) * 0.5F, (p_min.y + p_max.y) * 0.5F);
+    const float s = std::min(size.x, size.y);
+    const float t = std::max(1.0F, px(1.2F));
+    constexpr float pi = 3.14159265358979323846F;
+    const float r = s * 0.30F;
+    const float a0 = -pi * 0.35F;
+    const float a1 = pi * 1.35F;
+    ImDrawList* const list = ImGui::GetWindowDrawList();
+    list->PathArcTo(c, r, a0, a1, 24);
+    list->PathStroke(ink, 0, t);
+    const ImVec2 tip(c.x + r * std::cos(a0), c.y + r * std::sin(a0));
+    const float h = s * 0.16F;
+    list->AddTriangleFilled(ImVec2(tip.x - h * 0.2F, tip.y - h * 1.1F),
+                            ImVec2(tip.x + h * 1.1F, tip.y + h * 0.1F),
+                            ImVec2(tip.x - h * 0.6F, tip.y + h * 0.6F), ink);
+    return pressed;
 }
 
 } // namespace gui::look

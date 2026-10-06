@@ -43,5 +43,7 @@ void jump_to(const char* text);
 // `text` cut with "..." to fit `max_width`.
 void draw_text_ellipsized(ImDrawList* list, ImVec2 pos, ImU32 colour, const char* text,
                           float max_width);
+// An icon button with the refresh symbol from aoahid_player.
+bool icon_button_refresh(const char* id, const char* tooltip = nullptr);
 
 } // namespace gui::look

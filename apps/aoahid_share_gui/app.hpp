@@ -91,6 +91,7 @@ void apply(App& app);
 // Sends one command; the answer without its line end, or why none came.
 std::string command(App& app, const std::string& line);
 void start_daemon(App& app);
+void rescan_devices(App& app);
 void connect_device(App& app, const std::string& serial);
 void start_fill(App& app, const std::string& serial);
 void continue_fill(App& app);

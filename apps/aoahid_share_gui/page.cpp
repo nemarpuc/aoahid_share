@@ -10,6 +10,7 @@
 #include "placement.hpp"
 #include "status_view.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -77,13 +78,17 @@ void draw_gain_line(const DeviceConfig& device) {
 }
 
 void draw_device_screen(App& app, DeviceConfig& device) {
-    ImGui::BeginDisabled(!app.daemon_running || status_of(app, device, "state") != "ready" ||
-                         !app.filling.empty());
+    const std::string proxy = status_of(app, device, "proxy");
+    const bool proxy_ready = !proxy.empty() && proxy != "off";
+    ImGui::BeginDisabled(!app.daemon_running || !proxy_ready || !app.filling.empty());
     if (ImGui::Button("Fill from ADB"))
         start_fill(app, device.serial);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    look::dim("Reads these from the device through its ADB proxy, which has to be on.");
+    if (!proxy_ready)
+        look::dim("Connect the device and turn its ADB proxy on first.");
+    else
+        look::dim("Reads these from the device through its ADB proxy.");
     ImGui::Spacing();
     draw_group(app, "Android screen", &device);
     draw_gain_line(device);
@@ -197,7 +202,31 @@ void draw_list(App& app) {
         look::dim("Start the daemon to see the devices.");
         return;
     }
+    const float side = ImGui::GetFrameHeight();
+    ImGui::AlignTextToFramePadding();
+    look::dim("devices");
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(
+        std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - side));
+    if (look::icon_button_refresh("##rescan_devices", "Search for devices"))
+        rescan_devices(app);
+    std::vector<size_t> connected_indices;
+    std::vector<size_t> disconnected_indices;
     for (size_t index = 0; index < app.config.devices.size(); ++index) {
+        const DeviceConfig& device = app.config.devices[index];
+        const bool plugged = status_of(app, device, "plugged") == "yes" ||
+                             status_of(app, device, "state") == "ready" ||
+                             status_of(app, device, "state") == "error";
+        if (plugged)
+            connected_indices.push_back(index);
+        else
+            disconnected_indices.push_back(index);
+    }
+
+    if (connected_indices.empty() && app.fresh.empty())
+        look::dim("No devices connected.");
+
+    for (const size_t index : connected_indices) {
         const DeviceConfig& device = app.config.devices[index];
         const std::string label =
             std::string(look::mark(status_of(app, device, "state"), device.enabled)) + " " +
@@ -210,7 +239,8 @@ void draw_list(App& app) {
         ImGui::PopID();
     }
     if (!app.fresh.empty()) {
-        ImGui::Separator();
+        if (!connected_indices.empty())
+            ImGui::Separator();
         look::dim("plugged in, not set up");
         for (const NewDevice& fresh : app.fresh) {
             const std::string label = "+ " + (fresh.product.empty() ? fresh.serial : fresh.product);
@@ -220,6 +250,24 @@ void draw_list(App& app) {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s: add it and open it", fresh.serial.c_str());
             ImGui::PopID();
+        }
+    }
+    if (!disconnected_indices.empty()) {
+        ImGui::Spacing();
+        if (ImGui::TreeNode("Disconnected")) {
+            for (const size_t index : disconnected_indices) {
+                const DeviceConfig& device = app.config.devices[index];
+                const std::string label =
+                    std::string(look::mark(status_of(app, device, "state"), device.enabled)) + " " +
+                    (device.serial.empty() ? std::string("(waits for a device)") : label_of(device));
+                ImGui::PushID(static_cast<int>(index));
+                if (ImGui::Selectable(label.c_str(), has_selection(app) && app.device == index)) {
+                    app.computer = false;
+                    app.device = index;
+                }
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
         }
     }
 }

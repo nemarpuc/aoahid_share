@@ -33,10 +33,6 @@ namespace {
 // A Node rejects or drops the first reports after it opens (libaoahid
 // docs/TARGET_MATRIX.md), so a phone is not crossed to before this passes.
 constexpr double settle_seconds = 0.15;
-// Without a watch on the bus a scan is the only way to see a phone come, and
-// it sends a request to every USB device; with one it is only a safety net.
-constexpr auto scan_period = std::chrono::seconds(2);
-constexpr auto watched_scan_period = std::chrono::seconds(30);
 constexpr auto health_period = std::chrono::milliseconds(250);
 // A capture backend that would not start is tried again after 15 seconds,
 // waited out in short steps so a quit is noticed.
@@ -381,7 +377,7 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     monitors_ = capture_->monitors();
     rebuild_phones();
 
-    watching_ = watch_.start([this] { request_scan(); });
+    watching_ = false;
     device_thread_ = std::thread([this] { device_loop(); });
     ready_.store(true, std::memory_order_release);
     // A quit that came while starting up had nothing to stop yet.
@@ -454,7 +450,6 @@ void Daemon::wait_scanned() {
 }
 
 void Daemon::device_loop() {
-    auto last_scan = std::chrono::steady_clock::time_point{};
     bool first = true;
     // A scan was wanted while a phone had the input; it is made afterwards.
     bool postponed = false;
@@ -505,23 +500,51 @@ void Daemon::device_loop() {
             remote = active_ >= 0;
         });
 
-        // A phone that was lost is looked for at once, not at the next
-        // period; and a scan sends a request to every USB device, so it waits
-        // until no phone has the input.
-        const auto time = std::chrono::steady_clock::now();
-        const bool due = last_scan == std::chrono::steady_clock::time_point{} ||
-                         time - last_scan >= (watching_ ? watched_scan_period : scan_period);
-        if (!(asked || dropped || postponed || due))
+        if (!(asked || dropped || postponed))
             continue;
         if (remote) {
             postponed = true;
             continue;
         }
         postponed = false;
-        last_scan = time;
 
         std::string error;
         const std::vector<PhoneInfo> found = usb_.scan(error);
+
+        on_capture([&] {
+            for (size_t index = 0; index < phones_.size(); ++index) {
+                Phone& phone = *phones_[index];
+                if (phone.link >= 0) {
+                    const bool still_present = std::any_of(
+                        found.begin(), found.end(),
+                        [&](const PhoneInfo& info) { return info.serial == phone.serial; });
+                    if (!still_present)
+                        drop(index, "unplugged");
+                }
+            }
+            for (const PhoneInfo& info : found) {
+                if (plugged_.count(info.serial) == 0) {
+                    for (const DeviceConfig& d : config.devices) {
+                        if (d.serial == info.serial && d.enabled) {
+                            wanted_.insert(info.serial);
+                            break;
+                        }
+                    }
+                }
+            }
+            claimed.clear();
+            missing.clear();
+            for (size_t index = 0; index < phones_.size(); ++index) {
+                Phone& phone = *phones_[index];
+                if (phone.link >= 0) {
+                    claimed.push_back(phone.serial);
+                } else if (phone.config.enabled && !phone.config.serial.empty() &&
+                           wanted_.count(phone.config.serial) != 0) {
+                    missing.push_back({index, phone.config, phone.port, generation_});
+                }
+            }
+        });
+
         for (const Missing& entry : missing) {
             for (size_t index = 0; index < found.size(); ++index) {
                 const std::string& serial = found[index].serial;

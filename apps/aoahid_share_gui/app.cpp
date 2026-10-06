@@ -223,6 +223,14 @@ void start_daemon(App& app) {
     app.next_poll = ImGui::GetTime() + 1.0;
 }
 
+void rescan_devices(App& app) {
+    const std::string answer = command(app, "rescan");
+    app.failed = answer != "ok";
+    app.message = app.failed ? (answer.rfind("error=", 0) == 0 ? answer.substr(6) : answer)
+                             : "Searched for devices.";
+    poll_daemon(app);
+}
+
 // "Connect" on a plugged-in device: it gets a file of its own and is opened.
 // Nothing is read from it and no other device is touched; its values are
 // entered, or filled from adb once its proxy is on.

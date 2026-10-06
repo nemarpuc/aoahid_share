@@ -266,7 +266,7 @@ float sidebar_buttons_height(const App& app) {
     const float one = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
     if (!app.daemon_running)
         return one;
-    return app.computer || !has_selection(app) ? one * 3.0F : one * 2.0F;
+    return app.computer || !has_selection(app) ? one * 2.0F : one * 1.0F;
 }
 
 void draw_sidebar_buttons(App& app) {
@@ -275,11 +275,6 @@ void draw_sidebar_buttons(App& app) {
         if (ImGui::Button("Start the daemon", full))
             start_daemon(app);
         return;
-    }
-    if (ImGui::Button("Search for devices", full)) {
-        run(app, "rescan");
-        if (!app.failed)
-            app.message = "Searched for devices.";
     }
     if (app.computer || !has_selection(app)) {
         bool any_open = false;

@@ -265,7 +265,7 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 | `release` | bring input back to the computer |
 | `pause`, `resume` | pause or resume cursor crossing |
 | `resync` | re-reference the corner reference on the next crossing |
-| `rescan` | look for devices now and wait for the result. The daemon also looks by itself when a USB device comes or goes (Linux), and every 30 seconds as a safety net; elsewhere every 2 seconds. A scan sends a request to every USB device, so none is made while a device has the input |
+| `rescan` | look for devices now and wait for the result. A scan is made only when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the keyboard, the proxy, its port), and then it is opened again; no other device is opened |
 | `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`) |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |

@@ -34,6 +34,8 @@ namespace {
 // docs/TARGET_MATRIX.md), so a phone is not crossed to before this passes.
 constexpr double settle_seconds = 0.15;
 constexpr auto health_period = std::chrono::milliseconds(250);
+// How long the adb server takes to let go of the phones once it is stopped.
+constexpr auto adb_release_wait = std::chrono::milliseconds(800);
 // A capture backend that would not start is tried again after 15 seconds,
 // waited out in short steps so a quit is noticed.
 constexpr auto retry_step = std::chrono::milliseconds(200);
@@ -453,6 +455,9 @@ void Daemon::device_loop() {
     bool first = true;
     // A scan was wanted while a phone had the input; it is made afterwards.
     bool postponed = false;
+    // The adb server has to be stopped before a scan that was asked for, or
+    // it keeps the phones it claimed out of sight.
+    bool stop_adb = false;
     // The requests the next scan answers.
     uint64_t owed = 0;
     for (;;) {
@@ -502,11 +507,16 @@ void Daemon::device_loop() {
 
         if (!(asked || dropped || postponed))
             continue;
+        stop_adb = stop_adb || asked;
         if (remote) {
             postponed = true;
             continue;
         }
         postponed = false;
+
+        if (stop_adb && config.adb_kill_server && Adb(config.adb_path).kill_server())
+            std::this_thread::sleep_for(adb_release_wait);
+        stop_adb = false;
 
         std::string error;
         const std::vector<PhoneInfo> found = usb_.scan(error);

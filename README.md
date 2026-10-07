@@ -117,9 +117,10 @@ the resolution, rotation, physical size, pointer speed and whether pointer
 acceleration is on, and writes them (and the gain they give) into the
 device's file. It does not close or reopen anything. Every value can also be
 typed in by hand; a value that is not set is said to be missing, never
-guessed. The one time the daemon touches adb's server is to stop it when it
-holds the phone's ADB interface that a proxy is to take (`kill_server`, in
-`[adb]`), and once more on exit if a proxy was served.
+guessed. The only way the daemon touches adb's server is to stop it
+(`kill_server`, in `[adb]`): before each scan that was asked for, when it holds
+the ADB interface that a proxy is to take, and once more on exit if a proxy was
+served.
 
 ## Configuration
 
@@ -138,7 +139,7 @@ sensitivity = 1.0      ; the mouse's movement is sent as it comes, times this
 report_rate_hz = max   ; or every | 10..8000
 
 [adb]
-kill_server = true     ; stop adb's server if it holds a phone a proxy is to take
+kill_server = true     ; stop adb's server before a scan and when it holds a phone a proxy is to take
 ```
 
 `settings/device/<serial>.ini`:

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- The daemon stops a running adb server before every scan that was asked for (a
+  reload, `rescan`, `connect`), so a phone the server had claimed is found
+  again. It is switched off with `kill_server = false` under `[adb]`.
+
 ## 0.2.0
 
 The settings window was rebuilt.

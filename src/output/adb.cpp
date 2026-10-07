@@ -189,8 +189,9 @@ bool Adb::available() const {
     return result.started && result.exit_code == 0;
 }
 
-void Adb::kill_server() const {
-    static_cast<void>(run_process({path_, "kill-server"}, command_timeout_ms));
+bool Adb::kill_server() const {
+    const RunResult result = run_process({path_, "kill-server"}, command_timeout_ms);
+    return result.started && result.exit_code == 0;
 }
 
 bool Adb::connect(const uint16_t port, std::string& note, const std::atomic<bool>* cancel,

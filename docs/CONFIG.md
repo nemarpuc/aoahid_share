@@ -113,7 +113,7 @@ device in its own file.
 
 | Key | Default | |
 | --- | --- | --- |
-| `kill_server` | `true` | stop a running adb server that holds the ADB interface of a phone whose proxy is to start (once, then the proxy is tried again), and once more on exit if a proxy was served, so that adb sees the phone over USB again |
+| `kill_server` | `true` | stop a running adb server before every scan that was asked for (a reload, `rescan`, `connect`), since a server that claimed a phone keeps it from being found; also when a phone's proxy is to start and the server holds its ADB interface (once, then the proxy is tried again), and once more on exit if a proxy was served, so that adb sees the phone over USB again |
 | `path` | empty | the adb program, run only by "fill"; empty uses `PATH` |
 | `first_port` | `6555` | where the proxy ports start (1024 to 65535, not 5555 to 5585) |
 

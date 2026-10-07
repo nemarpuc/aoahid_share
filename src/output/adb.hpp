@@ -77,7 +77,8 @@ class Adb {
 
     // True when the program runs at all.
     [[nodiscard]] bool available() const;
-    void kill_server() const;
+    // True when adb ran and stopped (or found no) server.
+    bool kill_server() const;
     // `adb connect` to the proxy, then waits until the phone is usable (the
     // permission dialog included). `cancel` ends the wait early when set.
     // `created` is set when this call made the connection; false when adb

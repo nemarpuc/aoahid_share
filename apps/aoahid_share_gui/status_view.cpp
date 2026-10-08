@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -194,6 +195,69 @@ void draw_status(App& app, const aoas::DeviceConfig* device) {
         draw_delay_bars("Input to the start of its USB call", queue);
     if (!total.empty())
         draw_delay_bars("Input to the report's completion", total);
+}
+
+void draw_reports(App& app, const aoas::DeviceConfig& device) {
+    look::heading("Reports");
+    if (!app.daemon_running) {
+        look::dim("daemon: not running");
+        return;
+    }
+    if (app.reports_serial != device.serial) {
+        app.reports.clear();
+        app.reports_last = -1;
+        app.reports_serial = device.serial;
+        app.reports_next = 0.0;
+    }
+    look::dim("What was handed to the device, one line per call. Lines of one report share the "
+              "report number. Recording runs only while this tab is open.");
+    ImGui::Checkbox("Freeze", &app.reports_frozen);
+    ImGui::SameLine();
+    if (ImGui::Button("Clear"))
+        app.reports.clear();
+    ImGui::SameLine();
+    if (ImGui::Button("Copy"))
+        ImGui::SetClipboardText(
+            std::accumulate(
+                app.reports.begin(), app.reports.end(), std::string(),
+                [](const std::string& all, const std::string& line) { return all + line + "\n"; })
+                .c_str());
+
+    if (!app.reports_frozen && ImGui::GetTime() >= app.reports_next) {
+        app.reports_next = ImGui::GetTime() + poll_seconds;
+        const std::string answer = command(app, "reports " + device.serial);
+        if (answer.rfind("ok", 0) != 0) {
+            look::dim(answer.c_str());
+        } else {
+            std::istringstream lines(answer);
+            std::string line;
+            std::getline(lines, line);
+            std::vector<std::string> fresh;
+            while (std::getline(lines, line))
+                fresh.push_back(line);
+            // Numbers that fell back mean the device was opened again.
+            if (!fresh.empty() && std::atoll(fresh.back().c_str()) < app.reports_last) {
+                app.reports.clear();
+                app.reports_last = -1;
+            }
+            for (const std::string& each : fresh) {
+                const long long number = std::atoll(each.c_str());
+                if (number > app.reports_last) {
+                    app.reports_last = number;
+                    app.reports.push_back(each);
+                }
+            }
+            while (app.reports.size() > 1000)
+                app.reports.pop_front();
+        }
+    }
+
+    ImGui::BeginChild("reports", ImVec2(0, 0), true);
+    for (const std::string& line : app.reports)
+        ImGui::TextUnformatted(line.c_str());
+    if (!app.reports_frozen && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0F)
+        ImGui::SetScrollHereY(1.0F);
+    ImGui::EndChild();
 }
 
 } // namespace gui

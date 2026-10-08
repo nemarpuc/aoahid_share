@@ -69,6 +69,18 @@ struct Delta {
 // A delta in view space to the delta Android has to receive for it.
 [[nodiscard]] Delta to_device_delta(int mount, Delta view) noexcept;
 
+struct TouchPoint {
+    int x{};
+    int y{};
+};
+
+// A point of view space (rotation and mount both applied, as the user sees the
+// content) to the raw coordinates of a touchscreen in the device's natural
+// orientation. The mount is undone first, then Android's display rotation.
+// Rounded and clamped to the device (docs/MATH.md, "Touch").
+[[nodiscard]] TouchPoint to_touch_point(Size natural, int rotation, int mount, double view_x,
+                                        double view_y) noexcept;
+
 // Pixels per millimetre along the given axis; 0 when the size is unknown.
 [[nodiscard]] double monitor_density(const Monitor& monitor, bool along_x) noexcept;
 

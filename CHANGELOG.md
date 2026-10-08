@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0
+
+- Touchscreen mode (`[touch]`, global and per device): registers a touchscreen
+  next to the mouse and keyboard. The tap button (`tap_button`, left by
+  default) becomes a tap at the tracked cursor position and moving while it is
+  held drags. Needs the device's `width`, `height` and `rotation`; the
+  position is converted for every rotation and mount (docs/MATH.md).
+- The wheel can swipe a second finger (`scroll`, `scroll_pan` in device pixels
+  per notch). Every notch is a swipe of its own: put down, moved after
+  `scroll_start_ms` (0 to 2000, fractions allowed, 0 is the next report) and
+  lifted `scroll_release_ms` after that (0 to 2000, 0 is the report after the
+  move).
+- Android drops a touch when a mouse report arrives while it is down, so no
+  mouse movement is sent while a finger is down: it is summed and sent in one
+  report after the finger's lift. While the tap button is held the cursor
+  therefore stays where it was and jumps to the drop point (docs/CONFIG.md).
+- The daemon scans for devices when it starts (stopping the adb server first,
+  as for any scan that was asked for). A device that has a file and shows up
+  in a scan is listed but no longer opened by itself; it is opened with
+  `connect` or the Connect button. A device that was connected that way and
+  drops out still comes back by itself.
+- New `reports SERIAL|NAME` command and a Reports tab on a device's page: the
+  calls handed to the device (mouse, keys, media keys, touch contacts), one
+  line each, grouped by report. Recorded only while it is being watched.
+- The migration of the 0.2 file layout was removed.
+
 ## 0.2.1
 
 - The daemon stops a running adb server before every scan that was asked for (a

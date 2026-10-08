@@ -17,4 +17,7 @@ void draw_summary(App& app, const aoas::DeviceConfig* device);
 // The status block for a device, or for the computer when `device` is null.
 void draw_status(App& app, const aoas::DeviceConfig* device);
 
+// The calls the last reports to a device carried, as the daemon records them.
+void draw_reports(App& app, const aoas::DeviceConfig& device);
+
 } // namespace gui

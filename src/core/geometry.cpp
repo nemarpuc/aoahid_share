@@ -82,6 +82,51 @@ Delta to_device_delta(const int mount, const Delta view) noexcept {
     }
 }
 
+TouchPoint to_touch_point(const Size natural, const int rotation, const int mount,
+                          const double view_x, const double view_y) noexcept {
+    const Size view = view_size(natural, rotation, mount);
+    // View space to display space: undo the mount.
+    double dx = view_x;
+    double dy = view_y;
+    switch (mount) {
+    case 90:
+        dx = view_y;
+        dy = view.w - 1.0 - view_x;
+        break;
+    case 180:
+        dx = view.w - 1.0 - view_x;
+        dy = view.h - 1.0 - view_y;
+        break;
+    case 270:
+        dx = view.h - 1.0 - view_y;
+        dy = view_x;
+        break;
+    default:
+        break;
+    }
+    // Display space to the natural orientation: undo the display rotation.
+    double rx = dx;
+    double ry = dy;
+    switch (rotation) {
+    case 90:
+        rx = natural.w - 1.0 - dy;
+        ry = dx;
+        break;
+    case 180:
+        rx = natural.w - 1.0 - dx;
+        ry = natural.h - 1.0 - dy;
+        break;
+    case 270:
+        rx = dy;
+        ry = natural.h - 1.0 - dx;
+        break;
+    default:
+        break;
+    }
+    return {static_cast<int>(std::clamp(std::lround(rx), 0L, static_cast<long>(natural.w) - 1)),
+            static_cast<int>(std::clamp(std::lround(ry), 0L, static_cast<long>(natural.h) - 1))};
+}
+
 double monitor_density(const Monitor& monitor, const bool along_x) noexcept {
     const double mm = along_x ? monitor.width_mm : monitor.height_mm;
     const int pixels = along_x ? monitor.rect.w : monitor.rect.h;

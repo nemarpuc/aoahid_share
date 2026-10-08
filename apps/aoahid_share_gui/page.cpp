@@ -22,8 +22,8 @@ namespace gui {
 namespace {
 
 constexpr const char* const computer_tabs[] = {"General", "Motion", "ADB", "Status", "Tools"};
-constexpr const char* const device_tabs[] = {"Device", "Placement", "Screen",
-                                             "Motion", "Status",    "Tools"};
+constexpr const char* const device_tabs[] = {"Device", "HID",    "Placement", "Screen",
+                                             "Motion", "Status", "Reports",   "Tools"};
 
 // Every row of a heading of the tables that belongs on this page.
 void draw_group(App& app, const char* const group, DeviceConfig* const device) {
@@ -102,22 +102,43 @@ void draw_device_page(App& app, DeviceConfig& device) {
         draw_row(app, KeyScope::device, "device", "name", &device, "Name");
         draw_row(app, KeyScope::device, "device", "enabled", &device, "In use");
         draw_row(app, KeyScope::device, "device", "hotkey", &device, "Hotkey to this device");
-        draw_row(app, KeyScope::device, "keyboard", "enabled", &device, "Keyboard");
         draw_row(app, KeyScope::device, "adb", "proxy", &device, "ADB proxy");
         draw_row(app, KeyScope::device, "adb", "port", &device, "ADB proxy port");
         draw_proxy_command(app, device);
         break;
     case 1:
-        draw_placement(app, device);
+        draw_row(app, KeyScope::device, "mouse", "enabled", &device, "Mouse");
+        draw_row(app, KeyScope::device, "keyboard", "enabled", &device, "Keyboard");
+        draw_row(app, KeyScope::device, "media", "enabled", &device, "Media keys");
+        look::heading("Touchscreen");
+        look::dim("The left click becomes a tap where the cursor is, and the wheel swipes.");
+        look::dim("Needs the width, height and rotation of the device (Screen tab).");
+        look::dim(
+            "Swipe rows: the wheel swipes a second finger; they do not change the mouse scroll.");
+        draw_row(app, KeyScope::device, "touch", "enabled", &device, "Touch mode");
+        draw_row(app, KeyScope::device, "touch", "tap_button", &device, "Tap button");
+        draw_row(app, KeyScope::device, "touch", "scroll", &device, "Swipe distance per notch");
+        draw_row(app, KeyScope::device, "touch", "scroll_pan", &device,
+                 "Swipe distance per notch, sideways");
+        draw_row(app, KeyScope::device, "touch", "scroll_start_ms", &device,
+                 "Swipe start delay (0 = next report)");
+        draw_row(app, KeyScope::device, "touch", "scroll_release_ms", &device,
+                 "Swipe lift delay (0 = next report)");
         break;
     case 2:
-        draw_device_screen(app, device);
+        draw_placement(app, device);
         break;
     case 3:
-        draw_group(app, "Motion", &device);
+        draw_device_screen(app, device);
         break;
     case 4:
+        draw_group(app, "Motion", &device);
+        break;
+    case 5:
         draw_status(app, &device);
+        break;
+    case 6:
+        draw_reports(app, device);
         break;
     default:
         draw_device_tools(app, device);
@@ -131,7 +152,20 @@ void draw_computer_page(App& app) {
         draw_group(app, "General", nullptr);
         draw_row(app, KeyScope::computer, "mouse", "buttons", nullptr, "Mouse buttons");
         draw_row(app, KeyScope::computer, "mouse", "button_map", nullptr, "Button map");
+        draw_row(app, KeyScope::computer, "mouse", "enabled", nullptr, "Mouse");
         draw_row(app, KeyScope::computer, "keyboard", "enabled", nullptr, "Keyboard");
+        draw_row(app, KeyScope::computer, "media", "enabled", nullptr, "Media keys");
+        look::heading("Touchscreen");
+        draw_row(app, KeyScope::computer, "touch", "enabled", nullptr, "Touch mode");
+        draw_row(app, KeyScope::computer, "touch", "tap_button", nullptr, "Tap button");
+        draw_row(app, KeyScope::computer, "touch", "scroll", nullptr, "Swipe distance per notch");
+        draw_row(app, KeyScope::computer, "touch", "scroll_pan", nullptr,
+                 "Swipe distance per notch, sideways");
+        draw_row(app, KeyScope::computer, "touch", "scroll_start_ms", nullptr,
+                 "Swipe start delay (0 = next report)");
+        draw_row(app, KeyScope::computer, "touch", "scroll_release_ms", nullptr,
+                 "Swipe lift delay (0 = next report)");
+        look::heading("Media");
         draw_group(app, "Media", nullptr);
         break;
     case 1:

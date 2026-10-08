@@ -11,7 +11,7 @@
 namespace aoas {
 namespace {
 
-// A profile kept from an older config that named no device has no serial to be
+// A profile that names no device has no serial to be
 // filed under until a device takes it. Its file's name has a space in it,
 // which no serial can have, so it is never also a device's.
 std::string file_name(const DeviceConfig& device, const size_t unnamed) {
@@ -42,8 +42,6 @@ std::string load_store(Config& out) {
     } else if (!write_file(path, format_globals(config))) {
         return path + " could not be written";
     }
-    const bool old = !config.devices.empty();
-
     std::error_code ignored;
     std::vector<std::filesystem::path> files;
     for (const std::filesystem::directory_entry& entry :
@@ -69,15 +67,6 @@ std::string load_store(Config& out) {
     if (!error.empty())
         return error;
 
-    if (old) {
-        // Keep what the old layout wrote, then write the files it becomes.
-        // A failed backup stops here: config.ini is about to lose them.
-        std::string before;
-        if (!read_file(path, before) || !write_file(path + ".0.2", before))
-            return "the old " + path + " could not be copied to " + path + ".0.2";
-        if (!save_store(config))
-            return "the devices of the old " + path + " could not be written to " + devices_dir();
-    }
     out = std::move(config);
     return {};
 }
@@ -94,7 +83,6 @@ bool save_store(const Config& config) {
             return false;
         kept.push_back(name);
     }
-    // The devices are on disk before config.ini stops holding the old ones.
     if (!write_file(config_file_path(), format_globals(config)))
         return false;
     // Files of devices that are gone are removed: only what reads as a

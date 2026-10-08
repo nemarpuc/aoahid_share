@@ -67,12 +67,35 @@ struct MotionPatch {
     std::optional<ReportRate> report_rate;
 };
 
+// Touchscreen mode (docs/CONFIG.md, "[touch]").
+struct Touch {
+    bool enabled{};
+    // Pixels a wheel notch moves the finger; 0 leaves the wheel a mouse wheel.
+    int scroll{};
+    int scroll_pan{};
+    // From the last notch to lifting the finger.
+    int release_ms{200};
+    // From the swiping finger being put down to its move.
+    double start_ms{1.0};
+    // The mouse button that becomes a tap (1-based).
+    unsigned button{1};
+};
+
+struct TouchPatch {
+    std::optional<bool> enabled;
+    std::optional<int> scroll;
+    std::optional<int> scroll_pan;
+    std::optional<int> release_ms;
+    std::optional<double> start_ms;
+    std::optional<unsigned> button;
+};
+
 // One device, identified by its USB serial: one file under device/. A value
 // the file does not give is stored as its "unset" value here (-1 for the
 // integers, 0 for the sizes); the daemon then says what is missing and does
 // not guess it.
 struct DeviceConfig {
-    // Empty only for a profile kept from an older config that named no device;
+    // Empty only for a profile that names no device;
     // the next device that is connected by hand takes it.
     std::string serial;
     // What it is called everywhere; the serial when empty.
@@ -110,7 +133,10 @@ struct DeviceConfig {
     std::string read_at;
 
     MotionPatch motion;
+    std::optional<bool> mouse;
     std::optional<bool> keyboard;
+    std::optional<bool> media;
+    TouchPatch touch;
     // 0: the next free port from [adb] first_port, in the devices' order.
     uint16_t adb_port{};
     // Serve its ADB interface on adb_port (see docs/CONFIG.md). Off until it
@@ -128,7 +154,10 @@ struct Config {
     unsigned mouse_buttons{5};
     // HID button for PC button 1, 2, ...; empty keeps them in order.
     std::vector<unsigned> button_map;
+    bool mouse{true};
     bool keyboard{true};
+    bool media{true};
+    Touch touch;
     // A hotkey per entry of media_keys, empty for none.
     std::array<std::string, media_key_count> media_hotkeys;
     // The device media keys go to, by name or serial. Empty: the one that
@@ -198,7 +227,10 @@ struct Config {
 
 // The values a device runs with: the globals, with its own file's parts.
 [[nodiscard]] Motion motion_of(const Config& config, const DeviceConfig& device) noexcept;
+[[nodiscard]] bool mouse_of(const Config& config, const DeviceConfig& device) noexcept;
 [[nodiscard]] bool keyboard_of(const Config& config, const DeviceConfig& device) noexcept;
+[[nodiscard]] bool media_of(const Config& config, const DeviceConfig& device) noexcept;
+[[nodiscard]] Touch touch_of(const Config& config, const DeviceConfig& device) noexcept;
 [[nodiscard]] uint16_t adb_port_of(const Config& config, size_t index) noexcept;
 // Its name, or its serial when it has none.
 [[nodiscard]] const std::string& label_of(const DeviceConfig& device) noexcept;

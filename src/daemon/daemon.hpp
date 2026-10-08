@@ -119,6 +119,9 @@ class Daemon final : public CaptureHandler {
         std::string serial;
         int link{-1};
         bool placed{};
+        // Touch is switched on for it: the status then shows how far a tap
+        // can be from the cursor.
+        bool touch_on{};
         std::string lines;
         std::shared_ptr<PositionCell> cell;
     };

@@ -24,6 +24,8 @@ constexpr ConfigKey table[] = {
      "Takes the corner reference on the next crossing; empty turns it off."},
 
     // [mouse] and [keyboard]
+    {S::both, "mouse", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
+     "false does not register the mouse on the device."},
     {S::computer, "mouse", "buttons", "Mouse and keyboard", K::integer, "1..8", "", "5",
      "How many mouse buttons are sent; `aoahid_share buttons` reports what your mice have."},
     {S::computer, "mouse", "button_map", "Mouse and keyboard", K::list, "1..8, comma-separated", "",
@@ -31,9 +33,11 @@ constexpr ConfigKey table[] = {
      "HID button for PC button 1, 2, ...; empty keeps them in order, 1,3,2 swaps right and "
      "middle."},
     {S::both, "keyboard", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
-     "false shares the mouse only."},
+     "false does not register the keyboard on the device."},
 
     // [media]
+    {S::both, "media", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
+     "false does not register the media keys on the device."},
     {S::computer, "media", "target", "Media", K::text, "", "", "active",
      "The device that receives media keys, by name or serial; active means the one that has the "
      "input."},
@@ -47,6 +51,24 @@ constexpr ConfigKey table[] = {
      "Hotkey for the brightness-up key; empty turns it off."},
     {S::computer, "media", "brightness_down", "Media", K::hotkey, "", "", "",
      "Hotkey for the brightness-down key; empty turns it off."},
+
+    // [touch]
+    {S::both, "touch", "enabled", "Touchscreen", K::boolean, "", "", "false",
+     "The left click becomes a tap at the tracked position."},
+    {S::both, "touch", "scroll", "Touchscreen", K::integer, "-2000..2000", "device px", "0",
+     "Touchscreen swipe: how far a wheel notch moves the swiping finger up or down, in pixels "
+     "of the device's screen (times the scroll sensitivity). The finger moves that far at "
+     "once. 0 keeps the wheel a mouse wheel, a negative value reverses it."},
+    {S::both, "touch", "scroll_pan", "Touchscreen", K::integer, "-2000..2000", "device px", "0",
+     "Touchscreen swipe: the same for the horizontal wheel (sideways)."},
+    {S::both, "touch", "scroll_release_ms", "Touchscreen", K::integer, "0..2000", "ms", "200",
+     "Touchscreen swipe: milliseconds from the swiping finger's move to its lift, for every "
+     "wheel notch; 0 lifts it in the report after the move."},
+    {S::both, "touch", "scroll_start_ms", "Touchscreen", K::real, "0..2000", "ms", "1",
+     "Touchscreen swipe: milliseconds from the swiping finger being put down to its move, "
+     "for every wheel notch; 0 moves it in the very next report."},
+    {S::both, "touch", "tap_button", "Touchscreen", K::integer, "1..8", "", "1",
+     "The mouse button that becomes a tap."},
 
     // [motion]: the computer's values, which a device may replace
     {S::both, "motion", "sensitivity", "Motion", K::real, "0.05..20", "", "1",
@@ -67,8 +89,7 @@ constexpr ConfigKey table[] = {
      "uncertain."},
     {S::both, "motion", "no_cross_while_button", "Motion", K::boolean, "", "", "true",
      "Do not cross an edge while a mouse button is held."},
-    {S::both, "motion", "report_rate_hz", "Motion", K::text, "max|every|10..8000", "Hz",
-     "max",
+    {S::both, "motion", "report_rate_hz", "Motion", K::text, "max|every|10..8000", "Hz", "max",
      "max sends a report as soon as the previous one completes; every sends each movement as a "
      "report of its own; 10 to 8000 paces motion at that many reports a second."},
 
@@ -183,6 +204,10 @@ constexpr StatusKey status_table[] = {
      "Where it sits next to another device, as for segment."},
     {true, "position", "Position", "px", "x low|x high|y low|y high",
      "The tracked cursor range in the display's view space."},
+    {true, "touch", "Device", "", "",
+     "off, on, or not set: followed by what the touchscreen still needs."},
+    {true, "touch_error", "Position", "px", "x|y",
+     "How far a tap can be from the cursor: the width of the tracked range."},
     {true, "reports", "Link", "", "", "USB reports sent."},
     {true, "merged", "Link", "", "", "Inputs summed into a report that was already waiting."},
     {true, "depth", "Link", "", "", "Reports waiting now."},

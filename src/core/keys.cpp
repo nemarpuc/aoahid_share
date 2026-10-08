@@ -55,11 +55,14 @@ constexpr ConfigKey table[] = {
     // [touch]
     {S::both, "touch", "enabled", "Touchscreen", K::boolean, "", "", "false",
      "The left click becomes a tap at the tracked position."},
-    {S::both, "touch", "scroll", "Touchscreen", K::integer, "-2000..2000", "device px", "0",
+    {S::both, "touch", "swipe", "Touchscreen", K::boolean, "", "", "true",
+     "Touchscreen swipe: the wheel swipes a second finger. Off leaves it a mouse wheel."},
+    {S::both, "touch", "scroll", "Touchscreen", K::integer, "-2000..2000", "device px", "100",
      "Touchscreen swipe: how far a wheel notch moves the swiping finger up or down, in pixels "
      "of the device's screen (times the scroll sensitivity). The finger moves that far at "
-     "once. 0 keeps the wheel a mouse wheel, a negative value reverses it."},
-    {S::both, "touch", "scroll_pan", "Touchscreen", K::integer, "-2000..2000", "device px", "0",
+     "once. 0 keeps the wheel a mouse wheel, a negative value reverses it. 100 is a starting "
+     "value to adjust, not a measured one."},
+    {S::both, "touch", "scroll_pan", "Touchscreen", K::integer, "-2000..2000", "device px", "100",
      "Touchscreen swipe: the same for the horizontal wheel (sideways)."},
     {S::both, "touch", "scroll_release_ms", "Touchscreen", K::integer, "0..2000", "ms", "200",
      "Touchscreen swipe: milliseconds from the swiping finger's move to its lift, for every "

@@ -117,6 +117,7 @@ void draw_device_page(App& app, DeviceConfig& device) {
             "Swipe rows: the wheel swipes a second finger; they do not change the mouse scroll.");
         draw_row(app, KeyScope::device, "touch", "enabled", &device, "Touch mode");
         draw_row(app, KeyScope::device, "touch", "tap_button", &device, "Tap button");
+        draw_row(app, KeyScope::device, "touch", "swipe", &device, "Swipe with the wheel");
         draw_row(app, KeyScope::device, "touch", "scroll", &device, "Swipe distance per notch");
         draw_row(app, KeyScope::device, "touch", "scroll_pan", &device,
                  "Swipe distance per notch, sideways");
@@ -162,6 +163,7 @@ void draw_computer_page(App& app) {
         look::heading("Touchscreen");
         draw_row(app, KeyScope::computer, "touch", "enabled", nullptr, "Touch mode");
         draw_row(app, KeyScope::computer, "touch", "tap_button", nullptr, "Tap button");
+        draw_row(app, KeyScope::computer, "touch", "swipe", nullptr, "Swipe with the wheel");
         draw_row(app, KeyScope::computer, "touch", "scroll", nullptr, "Swipe distance per notch");
         draw_row(app, KeyScope::computer, "touch", "scroll_pan", nullptr,
                  "Swipe distance per notch, sideways");

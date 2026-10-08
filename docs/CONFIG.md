@@ -99,8 +99,9 @@ there, and moving while it is held drags. It needs the device's `width`,
 | --- | --- | --- |
 | `[touch] enabled` | `false` | `true` turns the mouse button `tap_button` into a tap |
 | `tap_button` | `1` | 1 to 8; the mouse button that becomes a tap (the left one is 1); it need not be one of the `buttons` the mouse declares |
-| `scroll` | `0` | -2000 to 2000; pixels of the device's screen the finger moves, all at once, for each wheel notch (times `scroll_sensitivity`), from where the cursor is; `0` leaves the wheel a mouse wheel, a negative value reverses the direction |
-| `scroll_pan` | `0` | the same for the horizontal wheel |
+| `swipe` | `true` | `false` leaves the wheel a mouse wheel; the swipe settings below then do nothing |
+| `scroll` | `100` | -2000 to 2000; pixels of the device's screen the finger moves, all at once, for each wheel notch (times `scroll_sensitivity`), from where the cursor is; `0` leaves the wheel a mouse wheel, a negative value reverses the direction |
+| `scroll_pan` | `100` | the same for the horizontal wheel |
 | `scroll_start_ms` | `1` | 0 to 2000, in milliseconds (fractions allowed, e.g. `0.25`); time from the swiping finger being put down to its move, for every notch; `0` moves it in the very next report |
 | `scroll_steps` | `4` | 1 to 64; the moves the distance of a notch is divided into (each is a touch report, at most one per polling period) |
 | `scroll_total_ms` | `8` | 0 to 2000, in milliseconds (fractions allowed); time from the first move to the last of a notch, so the gap between moves is this divided by `scroll_steps - 1` |
@@ -259,7 +260,7 @@ this way takes no input for about 150 ms, while Android registers it.
 
 ### `[touch]` (device override)
 
-Any of `enabled`, `tap_button`, `scroll`, `scroll_pan`, `scroll_start_ms`, `scroll_steps`, `scroll_total_ms`, `scroll_overlap` and `scroll_release_ms`
+Any of `enabled`, `tap_button`, `swipe`, `scroll`, `scroll_pan`, `scroll_start_ms`, `scroll_steps`, `scroll_total_ms`, `scroll_overlap` and `scroll_release_ms`
 from the global `[touch]` section; a key the file leaves out follows config.ini.
 A running device has the touchscreen registered or removed on `reload`, as for
 the mouse, keyboard and media keys; a change of the device's `width` or

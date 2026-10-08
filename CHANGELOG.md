@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- `[touch] swipe` turns the wheel swipe on and off (on by default; off leaves
+  the wheel a mouse wheel). The swipe settings start from values to begin
+  with: 100 device pixels per notch in both directions (a starting value, not
+  measured against a mouse wheel), 4 steps in 8 ms, put down 1 ms before the
+  first step, lifted 200 ms after the last, a notch during a swipe added to it.
+
 ## 0.3.0
 
 - Touchscreen mode (`[touch]`, global and per device): registers a touchscreen

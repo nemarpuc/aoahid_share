@@ -348,11 +348,11 @@ void Session::scroll(const double wheel, const double pan) {
     int pan_out = p;
     double dy = 0.0;
     double dx = 0.0;
-    if (w != 0 && touch_.scroll != 0) {
+    if (w != 0 && touch_.swipe && touch_.scroll != 0) {
         dy = static_cast<double>(w) * touch_.scroll;
         wheel_out = 0;
     }
-    if (p != 0 && touch_.scroll_pan != 0) {
+    if (p != 0 && touch_.swipe && touch_.scroll_pan != 0) {
         dx = -static_cast<double>(p) * touch_.scroll_pan;
         pan_out = 0;
     }

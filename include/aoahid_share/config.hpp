@@ -71,7 +71,7 @@ struct MotionPatch {
 struct Touch {
     bool enabled{};
     // The wheel swipes a finger. Off leaves it a mouse wheel.
-    bool swipe{true};
+    bool swipe{};
     // Pixels a wheel notch moves the finger; 0 leaves that wheel a mouse wheel.
     int scroll{100};
     int scroll_pan{100};

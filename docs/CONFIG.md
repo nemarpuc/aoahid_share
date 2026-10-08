@@ -99,7 +99,7 @@ there, and moving while it is held drags. It needs the device's `width`,
 | --- | --- | --- |
 | `[touch] enabled` | `false` | `true` turns the mouse button `tap_button` into a tap |
 | `tap_button` | `1` | 1 to 8; the mouse button that becomes a tap (the left one is 1); it need not be one of the `buttons` the mouse declares |
-| `swipe` | `true` | `false` leaves the wheel a mouse wheel; the swipe settings below then do nothing |
+| `swipe` | `false` | `true` makes the wheel swipe a second finger; `false` leaves it a mouse wheel and the swipe settings below do nothing (the settings window shows them only while it is on) |
 | `scroll` | `100` | -2000 to 2000; pixels of the device's screen the finger moves, all at once, for each wheel notch (times `scroll_sensitivity`), from where the cursor is; `0` leaves the wheel a mouse wheel, a negative value reverses the direction |
 | `scroll_pan` | `100` | the same for the horizontal wheel |
 | `scroll_start_ms` | `1` | 0 to 2000, in milliseconds (fractions allowed, e.g. `0.25`); time from the swiping finger being put down to its move, for every notch; `0` moves it in the very next report |

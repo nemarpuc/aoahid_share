@@ -105,7 +105,7 @@ there, and moving while it is held drags. It needs the device's `width`,
 | `scroll_start_ms` | `1` | 0 to 2000, in milliseconds (fractions allowed, e.g. `0.25`); time from the swiping finger being put down to its move, for every notch; `0` moves it in the very next report |
 | `scroll_steps` | `4` | 1 to 64; the moves the distance of a notch is divided into (each is a touch report, at most one per polling period) |
 | `scroll_total_ms` | `8` | 0 to 2000, in milliseconds (fractions allowed); time from the first move to the last of a notch, so the gap between moves is this divided by `scroll_steps - 1` |
-| `scroll_overlap` | `add` | `add` or `restart`; a notch that comes while a swipe still goes on is added to what is left of it and the same finger goes on (`add`), or that finger is lifted and the notch starts again where the cursor is, losing what was left (`restart`) |
+| `scroll_overlap` | `restart` | `restart` or `add`; what the next wheel notch does when the swipe before it has not finished. `restart` lifts the old finger and makes the notch a swipe of its own from the cursor (what was left of the old one is lost; the view does not drift). `add` adds the notch to what is left and the same finger goes on, which takes it further from the cursor with every notch |
 | `scroll_release_ms` | `200` | 0 to 2000, in milliseconds; time from the finger's move to its lift, for every notch; `0` lifts it in the report after the move |
 
 **Why the cursor stands still during a drag.** When a touchscreen and a mouse

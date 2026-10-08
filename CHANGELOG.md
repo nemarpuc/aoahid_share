@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+- `scroll_overlap` starts as `restart`: every wheel notch is a swipe of its own
+  from the cursor. With `add` (the old start) the finger went further from the
+  cursor with every notch, and the view drifted. The setting is labelled "Next
+  notch during a swipe" and its help says what each value does.
+
 ## 0.3.2
 
 - `[touch] swipe` turns the wheel swipe on and off; it is off by default and

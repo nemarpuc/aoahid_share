@@ -83,7 +83,7 @@ struct Touch {
     // of them, and what a notch does while a swipe goes on.
     int steps{4};
     double total_ms{8.0};
-    bool restart{};
+    bool restart{true};
     // The mouse button that becomes a tap (1-based).
     unsigned button{1};
 };

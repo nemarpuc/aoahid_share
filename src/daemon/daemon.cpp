@@ -930,6 +930,9 @@ void Daemon::relayout() {
         setup.scroll_pan = touch.scroll_pan;
         setup.release_s = touch.release_ms / 1000.0;
         setup.start_s = touch.start_ms / 1000.0;
+        setup.steps = touch.steps;
+        setup.total_s = touch.total_ms / 1000.0;
+        setup.restart = touch.restart;
         phone.session->set_touch(setup);
         phone.stage = Stage::ready;
         phone.status.clear();

@@ -67,6 +67,13 @@ constexpr ConfigKey table[] = {
     {S::both, "touch", "scroll_start_ms", "Touchscreen", K::real, "0..2000", "ms", "1",
      "Touchscreen swipe: milliseconds from the swiping finger being put down to its move, "
      "for every wheel notch; 0 moves it in the very next report."},
+    {S::both, "touch", "scroll_steps", "Touchscreen", K::integer, "1..64", "moves", "4",
+     "Touchscreen swipe: the moves the distance of a wheel notch is divided into."},
+    {S::both, "touch", "scroll_total_ms", "Touchscreen", K::real, "0..2000", "ms", "8",
+     "Touchscreen swipe: milliseconds from the first move to the last of a wheel notch."},
+    {S::both, "touch", "scroll_overlap", "Touchscreen", K::choice, "add|restart", "", "add",
+     "Touchscreen swipe: a notch that comes while a swipe goes on is added to what is left "
+     "(add) or lifts that finger and starts again where the cursor is (restart)."},
     {S::both, "touch", "tap_button", "Touchscreen", K::integer, "1..8", "", "1",
      "The mouse button that becomes a tap."},
 

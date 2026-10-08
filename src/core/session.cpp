@@ -310,14 +310,12 @@ void Session::swipe(const double dx, const double dy) {
     const double off_y = std::clamp(dy, -origin_y, view_.h - 1.0 - origin_y);
     if (off_x == 0.0 && off_y == 0.0)
         return;
-    // The one before it may still be down, waiting for its lift.
-    if (scroll_active_)
-        sink_.touch(1, scroll_at_.x, scroll_at_.y, false);
+    const TouchPoint from = raw_at(origin_x, origin_y);
+    const TouchPoint to = raw_at(origin_x + off_x, origin_y + off_y);
+    sink_.swipe({from.x, from.y, to.x - from.x, to.y - from.y, touch_.natural, touch_.steps,
+                 touch_.start_s, touch_.total_s, touch_.release_s, touch_.restart});
     scroll_active_ = true;
-    scroll_at_ = raw_at(origin_x, origin_y);
-    sink_.touch_place(1, scroll_at_.x, scroll_at_.y, touch_.start_s);
-    scroll_at_ = raw_at(origin_x + off_x, origin_y + off_y);
-    sink_.touch_hold(1, scroll_at_.x, scroll_at_.y, touch_.release_s);
+    scroll_at_ = to;
 }
 
 void Session::lift_touch() {

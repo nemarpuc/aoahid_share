@@ -12,6 +12,29 @@
 
 namespace aoas {
 
+// One wheel notch as a swipe of the second finger, in the touchscreen's raw
+// coordinates.
+struct SwipePlan {
+    // Where the finger is put down, and how far it goes from there.
+    int x{};
+    int y{};
+    int dx{};
+    int dy{};
+    // The touchscreen's raw size: the finger stays inside it.
+    Size area{};
+    // The moves the distance is divided into, and the times (seconds) from
+    // the finger being put down to its first move, from the first move to the
+    // last, and from the last move to the lift.
+    int steps{1};
+    double start_s{};
+    double total_s{};
+    double release_s{};
+    // When the swipe before it is still going: false adds the new distance to
+    // what is left and goes on with the same finger; true lifts that finger
+    // and starts again where the cursor is.
+    bool restart{};
+};
+
 // Receives what has to reach Android. Deltas are already rotated for the
 // mount, so an implementation only forwards them.
 class Sink {
@@ -34,15 +57,8 @@ class Sink {
     // A touchscreen contact in the device's raw coordinates (0 and 1 are the
     // two contacts); down == false lifts it, down == true places or moves it.
     virtual void touch(unsigned contact, int x, int y, bool down) = 0;
-    // Places or moves the contact, and lifts it release_s seconds after the
-    // last call for it unless touch() lifts it first.
-    virtual void touch_hold(unsigned contact, int x, int y, double release_s) = 0;
-    // Places a contact, and lets the next report wait gap_s seconds so the
-    // finger is seen down before it moves.
-    virtual void touch_place(unsigned contact, int x, int y, double gap_s) {
-        static_cast<void>(gap_s);
-        touch(contact, x, y, true);
-    }
+    // The second finger's swipe for one wheel notch.
+    virtual void swipe(const SwipePlan& plan) = 0;
 };
 
 struct MotionConfig {
@@ -79,8 +95,14 @@ struct TouchSetup {
     int scroll{};
     int scroll_pan{};
     double release_s{0.2};
-    // From a swipe's finger being put down to its move.
+    // From a swipe's finger being put down to its first move.
     double start_s{0.001};
+    // The moves a notch is divided into, and the time from the first to the
+    // last of them.
+    int steps{4};
+    double total_s{0.008};
+    // A notch that comes while a swipe goes on lifts it and starts again.
+    bool restart{};
 };
 
 // Another device beside this one: where on this display's edge the cursor

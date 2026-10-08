@@ -77,6 +77,11 @@ struct Touch {
     int release_ms{200};
     // From the swiping finger being put down to its move.
     double start_ms{1.0};
+    // The moves a notch is divided into, the time from the first to the last
+    // of them, and what a notch does while a swipe goes on.
+    int steps{4};
+    double total_ms{8.0};
+    bool restart{};
     // The mouse button that becomes a tap (1-based).
     unsigned button{1};
 };
@@ -87,6 +92,9 @@ struct TouchPatch {
     std::optional<int> scroll_pan;
     std::optional<int> release_ms;
     std::optional<double> start_ms;
+    std::optional<int> steps;
+    std::optional<double> total_ms;
+    std::optional<bool> restart;
     std::optional<unsigned> button;
 };
 

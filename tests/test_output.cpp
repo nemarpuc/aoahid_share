@@ -73,28 +73,6 @@ TEST_CASE("the settings are in one folder, the devices in device/ under it") {
     std::filesystem::remove_all(folder);
 }
 
-TEST_CASE("a 0.2 config's devices move into device/, and the old file is kept") {
-    const std::filesystem::path folder = test_settings_folder();
-    std::filesystem::remove_all(folder);
-    std::filesystem::create_directories(folder);
-    const std::string old = "[device.1]\nserial = OLD0001\nside = left\nwidth = 1080\n"
-                            "height = 2400\ndiagonal_inch = 6.5\n";
-    std::ofstream(folder / "config.ini") << old;
-    Config config;
-    CHECK(load_store(config).empty());
-    REQUIRE(config.devices.size() == 1);
-    CHECK(config.devices[0].serial == "OLD0001");
-    CHECK(std::filesystem::exists(folder / "device" / "OLD0001.ini"));
-    std::ifstream backup(folder / "config.ini.0.2");
-    std::string kept((std::istreambuf_iterator<char>(backup)), std::istreambuf_iterator<char>());
-    CHECK(kept == old);
-    // config.ini itself no longer holds the device.
-    Config second;
-    CHECK(load_store(second).empty());
-    CHECK(second.devices.size() == 1);
-    std::filesystem::remove_all(folder);
-}
-
 TEST_CASE("only mCurrentOrientation is the rotation") {
     CHECK(parse_rotation("mDefaultDisplayOrientation=1\nmCurrentRotation=1\n") == -1);
     CHECK(parse_rotation("mDefaultDisplayOrientation=1\n    mCurrentOrientation=2\n") == 180);

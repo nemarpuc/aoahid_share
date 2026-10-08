@@ -26,9 +26,11 @@ constexpr uint32_t report_policy_bytes = 1024U;
 constexpr uint32_t pool_slots = 8U;
 constexpr uint32_t close_drain_timeout_ms = 1000U;
 constexpr uint32_t drain_deadline_ms = 600U;
+// How long a Node added to an open phone waits for Android to register it.
+constexpr int64_t node_settle_ns = 150'000'000;
 constexpr uint32_t destroy_timeout_ms = 2000U;
 
-enum : uint8_t { event_button, event_key, event_media };
+enum : uint8_t { event_button, event_key, event_media, event_touch };
 
 // Consumer page usages the toggle Node declares; the key map only produces
 // these. Same list and order as aoahid_player's media_usages.
@@ -134,6 +136,27 @@ aoahid_result create_toggle(aoahid_spec** spec) noexcept {
     options.expected_linux_event_types = types;
     options.expected_linux_codes = codes;
     return aoahid_spec_create_toggle(&options, spec);
+}
+
+// Smallest width that represents 0..maximum.
+uint32_t bits_for(const int64_t maximum) noexcept {
+    uint32_t bits = 1;
+    while (bits < 32 && (int64_t{1} << bits) - 1 < maximum)
+        ++bits;
+    return bits;
+}
+
+aoahid_result create_touchscreen(const Size size, aoahid_spec** spec) noexcept {
+    aoahid_touchscreen_options options{};
+    options.struct_size = static_cast<uint32_t>(sizeof(options));
+    // Contact 0 is the click, contact 1 the scroll; one report carries both.
+    options.maximum_contacts = 2U;
+    options.contacts_per_report = 2U;
+    options.contact_identifier = field(0, 15, 4);
+    options.x = field(0, size.w - 1, bits_for(size.w - 1));
+    options.y = field(0, size.h - 1, bits_for(size.h - 1));
+    options.contact_count = field(0, 2, 2);
+    return aoahid_spec_create_touchscreen(&options, spec);
 }
 
 std::string describe(const aoahid_result result) {
@@ -337,32 +360,10 @@ int Usb::open(const size_t index, const LinkOptions& options, std::string& error
             return give_up("the phone could not be opened: " + describe(result));
         }
 
-        const aoahid_node_options node = node_options();
-        const auto add = [&](const aoahid_result created, aoahid_spec* spec, aoahid_node** out) {
-            if (created != AOAHID_OK)
-                return created;
-            const aoahid_result opened = aoahid_node_open(link.device, spec, &node, out);
-            // The Node keeps its own reference to the Spec.
-            aoahid_spec_release(spec);
-            if (opened != AOAHID_OK)
-                *out = nullptr;
-            return opened;
-        };
-        // Each Spec is created in its own statement: as a call argument it would
-        // be read before the factory beside it had filled it in.
-        aoahid_spec* spec = nullptr;
-        result = create_mouse(options.buttons, &spec);
-        result = add(result, spec, &link.mouse);
-        if (result == AOAHID_OK && options.keyboard) {
-            spec = nullptr;
-            result = create_keyboard(&spec);
-            result = add(result, spec, &link.keyboard);
-            if (result == AOAHID_OK) {
-                spec = nullptr;
-                result = create_toggle(&spec);
-                result = add(result, spec, &link.toggle);
-            }
-        }
+        link.buttons = options.buttons;
+        link.node_ready_ns = {};
+        link.touch_down = {};
+        result = sync_nodes_locked(link, options, 0);
         if (result != AOAHID_OK) {
             std::string why = "the input devices could not be registered: " + describe(result);
             close_locked(link);
@@ -374,6 +375,10 @@ int Usb::open(const size_t index, const LinkOptions& options, std::string& error
         const std::lock_guard<std::mutex> lock(link.queue);
         link.motion = {};
         link.jumps.clear();
+        link.hold_until = {};
+        link.touch_queued_down = {};
+        link.lift_owed = {};
+        link.trace_until.store(0, std::memory_order_relaxed);
         link.head = link.count = 0;
         link.stopping = false;
     }
@@ -394,6 +399,77 @@ int Usb::open(const size_t index, const LinkOptions& options, std::string& error
     return slot;
 }
 
+aoahid_result Usb::sync_nodes_locked(Link& link, const LinkOptions& options,
+                                     const int64_t ready_ns) {
+    const aoahid_node_options node = node_options();
+    // Each Spec is created in its own statement: as a call argument it would
+    // be read before the factory beside it had filled it in.
+    const auto sync = [&](const size_t kind, aoahid_node*& slot, const bool wanted,
+                          const auto create) -> aoahid_result {
+        if (wanted == (slot != nullptr))
+            return AOAHID_OK;
+        if (!wanted) {
+            // Neutral reports first, then the unregister; an error leaves
+            // the Node open.
+            const aoahid_result closed = aoahid_node_close(slot);
+            if (closed == AOAHID_OK)
+                slot = nullptr;
+            return closed;
+        }
+        aoahid_spec* spec = nullptr;
+        aoahid_result result = create(&spec);
+        if (result != AOAHID_OK)
+            return result;
+        result = aoahid_node_open(link.device, spec, &node, &slot);
+        // The Node keeps its own reference to the Spec.
+        aoahid_spec_release(spec);
+        if (result != AOAHID_OK) {
+            slot = nullptr;
+            return result;
+        }
+        link.node_ready_ns[kind] = ready_ns;
+        return AOAHID_OK;
+    };
+    aoahid_result result = sync(0, link.mouse, options.mouse, [&](aoahid_spec** spec) {
+        return create_mouse(link.buttons, spec);
+    });
+    if (result == AOAHID_OK)
+        result = sync(1, link.keyboard, options.keyboard, create_keyboard);
+    if (result == AOAHID_OK)
+        result = sync(2, link.toggle, options.media, create_toggle);
+    // A size that changed means a new Spec: the old Node goes first.
+    if (result == AOAHID_OK && link.touch != nullptr && options.touch &&
+        (link.touch_size.w != options.touch_size.w || link.touch_size.h != options.touch_size.h)) {
+        result = aoahid_node_close(link.touch);
+        if (result == AOAHID_OK)
+            link.touch = nullptr;
+    }
+    if (result == AOAHID_OK) {
+        const bool had = link.touch != nullptr;
+        result = sync(3, link.touch, options.touch, [&](aoahid_spec** spec) {
+            return create_touchscreen(options.touch_size, spec);
+        });
+        if (result == AOAHID_OK) {
+            link.touch_size = options.touch_size;
+            if (!had)
+                link.touch_down = {};
+        }
+    }
+    return result;
+}
+
+void Usb::set_nodes(const int link, const LinkOptions& options) {
+    if (link < 0 || link >= max_links)
+        return;
+    Link& entry = links_[static_cast<size_t>(link)];
+    const std::lock_guard<std::mutex> lock(entry.usb);
+    if (entry.device == nullptr || !entry.open.load(std::memory_order_acquire))
+        return;
+    const aoahid_result result = sync_nodes_locked(entry, options, now_ns() + node_settle_ns);
+    if (result != AOAHID_OK)
+        fail(entry, result);
+}
+
 void Usb::close_locked(Link& link) {
     link.open.store(false, std::memory_order_release);
     // The proxy's threads and Channel must be gone before the Device closes.
@@ -403,7 +479,8 @@ void Usb::close_locked(Link& link) {
     if (link.device != nullptr)
         static_cast<void>(aoahid_device_close(link.device));
     link.device = nullptr;
-    link.mouse = link.keyboard = link.toggle = nullptr;
+    link.mouse = link.keyboard = link.toggle = link.touch = nullptr;
+    link.touch_down = {};
 }
 
 void Usb::close(const int link) {
@@ -438,6 +515,50 @@ uint64_t Usb::reports(const int link) const noexcept {
     if (link < 0 || link >= max_links)
         return 0;
     return links_[static_cast<size_t>(link)].reports.load(std::memory_order_relaxed);
+}
+
+std::vector<std::string> Usb::trace(const int link) {
+    std::vector<std::string> lines;
+    if (link < 0 || link >= max_links)
+        return lines;
+    Link& entry = links_[static_cast<size_t>(link)];
+    constexpr int64_t keep_on_ns = 2000000000;
+    entry.trace_until.store(now_ns() + keep_on_ns, std::memory_order_relaxed);
+    const std::lock_guard<std::mutex> lock(entry.trace_lock);
+    const size_t size = entry.trace_ring.size();
+    const uint64_t first = entry.trace_next > size ? entry.trace_next - size : 0;
+    for (uint64_t number = first; number < entry.trace_next; ++number) {
+        const Trace& call = entry.trace_ring[number % size];
+        std::string text;
+        switch (call.kind) {
+        case Trace::mouse_move:
+            text = "mouse move dx " + std::to_string(call.a) + " dy " + std::to_string(call.b);
+            break;
+        case Trace::mouse_scroll:
+            text =
+                "mouse scroll wheel " + std::to_string(call.a) + " pan " + std::to_string(call.b);
+            break;
+        case Trace::button:
+            text = "mouse button " + std::to_string(call.a) + (call.phase != 0 ? " down" : " up");
+            break;
+        case Trace::key:
+            text = "key usage " + std::to_string(call.a) + (call.phase != 0 ? " down" : " up");
+            break;
+        case Trace::media:
+            text = "media usage " + std::to_string(call.a) + (call.phase != 0 ? " down" : " up");
+            break;
+        case Trace::touch:
+            text = "touch contact " + std::to_string(call.a) +
+                   (call.phase == 0   ? " lift"
+                    : call.phase == 1 ? " down"
+                                      : " move") +
+                   " x " + std::to_string(call.b) + " y " + std::to_string(call.c);
+            break;
+        }
+        lines.push_back(std::to_string(number) + " " + std::to_string(call.at / 1000000) + " " +
+                        std::to_string(call.report) + " " + text);
+    }
+    return lines;
 }
 
 LinkStats Usb::stats(const int link) const {
@@ -584,6 +705,91 @@ void Usb::LinkSink::media(const uint16_t usage, const bool down) {
     usb_->push(usb_->links_[link_], {event_media, link_, usage, down, now_ns()});
 }
 
+void Usb::LinkSink::touch(const unsigned contact, const int x, const int y, const bool down) {
+    if (contact > 1)
+        return;
+    Link& link = usb_->links_[link_];
+    {
+        const std::lock_guard<std::mutex> lock(link.queue);
+        // A lift ends any wait to lift it.
+        if (!down)
+            link.hold_until[contact] = 0;
+        usb_->queue_touch_locked(link, contact, x, y, down, now_ns());
+    }
+    link.wake.notify_one();
+}
+
+void Usb::LinkSink::touch_place(const unsigned contact, const int x, const int y,
+                                const double gap_s) {
+    if (contact > 1)
+        return;
+    Link& link = usb_->links_[link_];
+    {
+        const std::lock_guard<std::mutex> lock(link.queue);
+        usb_->queue_touch_locked(link, contact, x, y, true, now_ns(),
+                                 static_cast<int64_t>(gap_s * 1e9));
+    }
+    link.wake.notify_one();
+}
+
+void Usb::LinkSink::touch_hold(const unsigned contact, const int x, const int y,
+                               const double release_s) {
+    if (contact > 1)
+        return;
+    Link& link = usb_->links_[link_];
+    const int64_t at = now_ns();
+    {
+        const std::lock_guard<std::mutex> lock(link.queue);
+        link.hold_until[contact] = at + static_cast<int64_t>(release_s * 1e9);
+        link.hold_x[contact] = x;
+        link.hold_y[contact] = y;
+        usb_->queue_touch_locked(link, contact, x, y, true, at);
+    }
+    link.wake.notify_one();
+}
+
+void Usb::queue_touch_locked(Link& link, const unsigned contact, const int x, const int y,
+                             const bool down, const int64_t at, const int64_t gap_ns) {
+    // Only a move merges with a move; the event that puts the contact down
+    // stays an event of its own, so the placement is sent before the move.
+    if (down && link.count != 0) {
+        Event& last = link.events[(link.head + link.count - 1) % link.events.size()];
+        if (last.kind == event_touch && last.code == contact && last.down && !last.placing) {
+            last.x = x;
+            last.y = y;
+            return;
+        }
+    }
+    // While a lift waits for room, nothing new is put down: it would be
+    // lifted by that lift.
+    if (down && link.lift_owed[contact])
+        return;
+    if (link.count == link.events.size()) {
+        // A full queue means the phone stopped answering, and the link fails
+        // on its own timeout, so the newest edge is dropped. A lift is kept,
+        // or the contact would stay down on the device.
+        if (!down) {
+            link.lift_owed[contact] = true;
+            link.lift_x[contact] = x;
+            link.lift_y[contact] = y;
+            link.touch_queued_down[contact] = false;
+        }
+        return;
+    }
+    Event& slot = link.events[(link.head + link.count) % link.events.size()];
+    slot = Event{event_touch,
+                 static_cast<uint8_t>(&link - links_.data()),
+                 static_cast<uint16_t>(contact),
+                 down,
+                 at,
+                 x,
+                 y,
+                 down && !link.touch_queued_down[contact],
+                 gap_ns};
+    link.touch_queued_down[contact] = down;
+    ++link.count;
+}
+
 void Usb::push(Link& link, const Event& event) {
     {
         const std::lock_guard<std::mutex> lock(link.queue);
@@ -601,12 +807,56 @@ void Usb::run(Link& link) {
     using clock = std::chrono::steady_clock;
     link.realtime.store(favour_this_thread(), std::memory_order_relaxed);
     clock::time_point next_tick = clock::now();
+    clock::time_point placed_until = next_tick;
     std::unique_lock<std::mutex> lock(link.queue);
+    // Android drops a touch when a mouse report arrives while it is down, and
+    // takes that for a cancel, not a lift. So movement waits while a contact
+    // is down or a touch event is still queued, and goes out in a report
+    // after the lift.
+    const auto touching = [&] {
+        if (link.touch_queued_down[0] || link.touch_queued_down[1])
+            return true;
+        for (size_t waiting = 0; waiting < link.count; ++waiting) {
+            if (link.events[(link.head + waiting) % link.events.size()].kind == event_touch)
+                return true;
+        }
+        return false;
+    };
     const auto pending = [&] {
-        return link.count != 0 || !link.jumps.empty() || link.motion.any();
+        return link.count != 0 || !link.jumps.empty() || (link.motion.any() && !touching());
     };
     for (;;) {
-        link.wake.wait(lock, [&] { return link.stopping || pending(); });
+        for (;;) {
+            // A held contact whose time has come is lifted like any other edge.
+            const int64_t now = now_ns();
+            int64_t next = 0;
+            for (size_t contact = 0; contact < link.hold_until.size(); ++contact) {
+                int64_t& until = link.hold_until[contact];
+                if (until == 0)
+                    continue;
+                if (now >= until) {
+                    until = 0;
+                    queue_touch_locked(link, static_cast<unsigned>(contact), link.hold_x[contact],
+                                       link.hold_y[contact], false, now);
+                } else if (next == 0 || until < next) {
+                    next = until;
+                }
+            }
+            // A lift that found the queue full goes in as soon as there is room.
+            for (size_t contact = 0; contact < link.lift_owed.size(); ++contact) {
+                if (link.lift_owed[contact] && link.count < link.events.size()) {
+                    link.lift_owed[contact] = false;
+                    queue_touch_locked(link, static_cast<unsigned>(contact), link.lift_x[contact],
+                                       link.lift_y[contact], false, now);
+                }
+            }
+            if (link.stopping || pending())
+                break;
+            if (next == 0)
+                link.wake.wait(lock);
+            else
+                link.wake.wait_until(lock, clock::time_point(std::chrono::nanoseconds(next)));
+        }
         if (link.stopping)
             return;
 
@@ -624,6 +874,16 @@ void Usb::run(Link& link) {
         // Motion alone waits for the next tick of the configured rate; a key
         // or button edge goes out at once and takes the pending motion along.
         const unsigned rate = link.rate_hz.load(std::memory_order_relaxed);
+        // What follows a finger's placement waits one report period (1 ms at
+        // least), so Android sees the finger down before it moves.
+        if (clock::now() < placed_until) {
+            link.wake.wait_until(lock, placed_until,
+                                 [&] { return link.stopping || !link.jumps.empty(); });
+            if (link.stopping)
+                return;
+            if (!link.jumps.empty())
+                continue;
+        }
         if (rate != 0 && link.count == 0) {
             const auto period = std::chrono::nanoseconds(1000000000LL / rate);
             const clock::time_point now = clock::now();
@@ -642,8 +902,6 @@ void Usb::run(Link& link) {
         if (!pending())
             continue;
 
-        const Motion motion = link.motion;
-        link.motion = {};
         // A report holds one state per key and button, so a second edge of
         // the same one waits for the next report.
         std::array<Event, 32> batch{};
@@ -663,9 +921,33 @@ void Usb::run(Link& link) {
             --link.count;
         }
 
+        // The batch's own touch events are no longer queued, but they are
+        // not yet delivered: movement still waits for them.
+        Motion motion;
+        const bool batch_touches =
+            std::any_of(batch.begin(), batch.begin() + static_cast<std::ptrdiff_t>(taken),
+                        [](const Event& each) { return each.kind == event_touch; });
+        if (!batch_touches && !touching()) {
+            motion = link.motion;
+            link.motion = {};
+        }
+        // A finger that was put down holds the next report back: by what its
+        // event says, or one report period (1 ms at least).
+        int64_t wait_ns = 0;
+        for (size_t index = 0; index < taken; ++index) {
+            const Event& each = batch[index];
+            if (each.kind != event_touch || !each.placing)
+                continue;
+            const int64_t period =
+                rate != 0 ? 1000000000LL / static_cast<int64_t>(rate) : int64_t{0};
+            wait_ns = std::max(wait_ns,
+                               each.gap_ns >= 0 ? each.gap_ns : std::max(period, int64_t{1000000}));
+        }
         lock.unlock();
         deliver(link, motion, batch.data(), taken);
         lock.lock();
+        if (wait_ns > 0)
+            placed_until = clock::now() + std::chrono::nanoseconds(wait_ns);
     }
 }
 
@@ -690,16 +972,37 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
     }
     const int64_t started = now_ns();
 
+    // A Node that is absent, or was added a moment ago, takes nothing.
+    const auto usable = [&](aoahid_node* node, const size_t kind) {
+        return node != nullptr && started >= link.node_ready_ns[kind];
+    };
+    const bool can_mouse = usable(link.mouse, 0);
+    const bool can_keyboard = usable(link.keyboard, 1);
+    const bool can_toggle = usable(link.toggle, 2);
+    const bool can_touch = usable(link.touch, 3);
+
     bool mouse = false;
     bool keyboard = false;
     bool toggle = false;
+    bool touch = false;
     aoahid_result result = AOAHID_OK;
-    if (motion.dx != 0 || motion.dy != 0) {
+    // What this report carries, kept only while someone is looking.
+    const bool tracing = started < link.trace_until.load(std::memory_order_relaxed);
+    std::array<Trace, 34> calls;
+    size_t called = 0;
+    const auto note_call = [&](const Trace::Kind kind, const uint8_t phase, const int32_t a,
+                               const int32_t b = 0, const int32_t c = 0) {
+        if (tracing && called < calls.size())
+            calls[called++] = Trace{started, 0, kind, phase, a, b, c};
+    };
+    if (can_mouse && (motion.dx != 0 || motion.dy != 0)) {
         result = aoahid_mouse_move(link.mouse, narrow(motion.dx), narrow(motion.dy));
+        note_call(Trace::mouse_move, 0, narrow(motion.dx), narrow(motion.dy));
         mouse = true;
     }
-    if (result == AOAHID_OK && (motion.wheel != 0 || motion.pan != 0)) {
+    if (can_mouse && result == AOAHID_OK && (motion.wheel != 0 || motion.pan != 0)) {
         result = aoahid_mouse_scroll(link.mouse, narrow(motion.wheel), narrow(motion.pan));
+        note_call(Trace::mouse_scroll, 0, narrow(motion.wheel), narrow(motion.pan));
         mouse = true;
     }
     for (size_t index = 0; index < count && result == AOAHID_OK; ++index) {
@@ -707,19 +1010,41 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
         const uint32_t down = event.down ? 1U : 0U;
         switch (event.kind) {
         case event_button:
-            result = aoahid_mouse_button(link.mouse, event.code, down);
-            mouse = true;
+            if (can_mouse) {
+                result = aoahid_mouse_button(link.mouse, event.code, down);
+                note_call(Trace::button, event.down, event.code);
+                mouse = true;
+            }
             break;
         case event_key:
-            if (link.keyboard != nullptr) {
+            if (can_keyboard) {
                 result = aoahid_kbd(link.keyboard, event.code, down);
+                note_call(Trace::key, event.down, event.code);
                 keyboard = true;
             }
             break;
         case event_media:
-            if (link.toggle != nullptr) {
+            if (can_toggle) {
                 result = aoahid_toggle(link.toggle, event.down ? event.code : uint16_t{0}, down);
+                note_call(Trace::media, event.down, event.code);
                 toggle = true;
+            }
+            break;
+        case event_touch:
+            if (can_touch && event.code < 2) {
+                // A lift of a contact that was never placed (its down was
+                // dropped while the Node settled) is not sent: libaoahid
+                // rejects it and the link would fail.
+                if (!event.down && !link.touch_down[event.code])
+                    break;
+                result = aoahid_touch(link.touch, event.code, down, event.x, event.y, nullptr);
+                note_call(Trace::touch,
+                          !event.down                   ? 0
+                          : link.touch_down[event.code] ? 2
+                                                        : 1,
+                          event.code, event.x, event.y);
+                link.touch_down[event.code] = event.down;
+                touch = true;
             }
             break;
         default:
@@ -730,7 +1055,7 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
     // Queue every Node's report before waiting on any, so they overlap on
     // the wire instead of running one after another.
     aoahid_node* const nodes[] = {mouse ? link.mouse : nullptr, keyboard ? link.keyboard : nullptr,
-                                  toggle ? link.toggle : nullptr};
+                                  toggle ? link.toggle : nullptr, touch ? link.touch : nullptr};
     for (aoahid_node* node : nodes) {
         if (node != nullptr && result == AOAHID_OK)
             result = aoahid_node_submit(node);
@@ -744,7 +1069,14 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
         fail(link, result);
         return;
     }
-    link.reports.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t report = link.reports.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (called != 0) {
+        const std::lock_guard<std::mutex> lock(link.trace_lock);
+        for (size_t index = 0; index < called; ++index) {
+            calls[index].report = report;
+            link.trace_ring[link.trace_next++ % link.trace_ring.size()] = calls[index];
+        }
+    }
     if (first == 0)
         return;
     const int64_t done = now_ns();

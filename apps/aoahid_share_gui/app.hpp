@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -69,6 +70,14 @@ struct App {
     // The device being filled from adb, and when to stop waiting for it.
     std::string filling;
     double filling_until{};
+
+    // The Reports tab: the lines of the device named by reports_serial, the
+    // number of the last one taken, and whether the list is frozen.
+    std::deque<std::string> reports;
+    std::string reports_serial;
+    long long reports_last{-1};
+    bool reports_frozen{};
+    double reports_next{};
 
     // Setting a device up by eye: counts stepped from its top left corner.
     bool probing{};

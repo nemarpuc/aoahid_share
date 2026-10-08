@@ -31,6 +31,18 @@ class Sink {
     virtual void key(uint16_t usage, bool down) = 0;
     // Consumer page usage.
     virtual void media(uint16_t usage, bool down) = 0;
+    // A touchscreen contact in the device's raw coordinates (0 and 1 are the
+    // two contacts); down == false lifts it, down == true places or moves it.
+    virtual void touch(unsigned contact, int x, int y, bool down) = 0;
+    // Places or moves the contact, and lifts it release_s seconds after the
+    // last call for it unless touch() lifts it first.
+    virtual void touch_hold(unsigned contact, int x, int y, double release_s) = 0;
+    // Places a contact, and lets the next report wait gap_s seconds so the
+    // finger is seen down before it moves.
+    virtual void touch_place(unsigned contact, int x, int y, double gap_s) {
+        static_cast<void>(gap_s);
+        touch(contact, x, y, true);
+    }
 };
 
 struct MotionConfig {
@@ -52,6 +64,23 @@ struct MotionConfig {
     double return_push{-1.0};
     bool no_cross_while_button{true};
     unsigned buttons{5};
+};
+
+// Touchscreen mode: the geometry the conversion needs, and the settings.
+struct TouchSetup {
+    bool enabled{};
+    // The device's natural size and Android's display rotation (the mount is
+    // the session's own).
+    Size natural{};
+    int rotation{};
+    // The mouse button that becomes a tap.
+    unsigned button{1};
+    // Pixels a notch moves the finger on each axis; 0 leaves that wheel alone.
+    int scroll{};
+    int scroll_pan{};
+    double release_s{0.2};
+    // From a swipe's finger being put down to its move.
+    double start_s{0.001};
 };
 
 // Another device beside this one: where on this display's edge the cursor
@@ -77,6 +106,10 @@ class Session {
     void configure(const Portal& portal, Size view, int mount, const MotionConfig& motion,
                    const AccelModel& accel, std::vector<Neighbour> neighbours = {},
                    bool has_pc = true);
+
+    // Sets touchscreen mode. Called after configure(). A contact that is down
+    // is lifted first: the old setup's positions mean nothing in the new one.
+    void set_touch(const TouchSetup& setup);
 
     // Where the tracker's range is published after every change, for a thread
     // that may not touch the session. Null: nowhere.
@@ -131,6 +164,13 @@ class Session {
     // Distance of the cursor's far bound from that edge.
     [[nodiscard]] double distance(Side edge) const noexcept;
     [[nodiscard]] double return_threshold() const noexcept;
+    [[nodiscard]] TouchPoint raw_at(double view_x, double view_y) const noexcept;
+    void tap(bool down);
+    void follow_tap();
+    void swipe(double dx, double dy);
+    void lift_touch();
+    // Sends the movement kept back while the finger was down, as one report.
+    void flush_held();
 
     Sink& sink_;
     Portal portal_{};
@@ -158,6 +198,19 @@ class Session {
     double fraction_y_{};
     double fraction_wheel_{};
     double fraction_pan_{};
+
+    TouchSetup touch_{};
+    bool tap_down_{};
+    TouchPoint tap_at_{};
+    // While the finger is down no mouse report goes out (Android drops the
+    // touch when the mouse reports): the movement is summed here, with where
+    // the tracker stood when the finger went down and the time of the last
+    // step, and sent when the finger is lifted.
+    Delta held_{};
+    Tracker held_from_{};
+    double held_at_{};
+    bool scroll_active_{};
+    TouchPoint scroll_at_{};
 
     std::bitset<256> keys_{};
     uint32_t buttons_{};

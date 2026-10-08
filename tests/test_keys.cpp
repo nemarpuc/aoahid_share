@@ -147,7 +147,10 @@ DeviceConfig full_device() {
     d.gain = 1.0;
     d.accel = AccelSetting::on;
     d.motion = motion_patch_of(Motion{});
+    d.mouse = true;
     d.keyboard = true;
+    d.media = true;
+    d.touch = TouchPatch{true, 100, 100, 250, 1U};
     d.adb_proxy = true;
     d.adb_port = 6555;
     return d;
@@ -191,6 +194,7 @@ TEST_CASE("every key the library writes is in the table") {
 TEST_CASE("every key in the table is accepted by the parser and read back") {
     const std::map<std::string, std::string> special = {
         {"mouse.buttons", "3"},
+        {"touch.scroll_release_ms", "250"},
         {"adb.first_port", "7000"},
         {"adb.port", "7001"},
         {"device.serial", "XYZ9"},
@@ -287,7 +291,8 @@ TEST_CASE("docs/CONFIG.md and the tables name the same keys") {
     known.erase("monitor.#");
     known.erase("new.#");
     // A row that names a key together with its section.
-    const std::set<std::string> with_section = {"[keyboard] enabled"};
+    const std::set<std::string> with_section = {"[mouse] enabled", "[keyboard] enabled",
+                                                "[media] enabled", "[touch] enabled"};
     for (const std::string& name : rows) {
         const bool understood = known.count(name) == 1 || with_section.count(name) == 1;
         CHECK_MESSAGE(understood, name << " has a row in the docs but is not in a table");
@@ -306,6 +311,10 @@ TEST_CASE("a key is found by its place, and the same name in two sections is tol
     // A key that both may set is found from either side.
     CHECK(find_config_key(KeyScope::computer, "keyboard", "enabled") != nullptr);
     CHECK(find_config_key(KeyScope::device, "keyboard", "enabled") != nullptr);
+    CHECK(find_config_key(KeyScope::device, "mouse", "enabled") != nullptr);
+    CHECK(find_config_key(KeyScope::device, "media", "enabled") != nullptr);
+    CHECK(find_config_key(KeyScope::device, "touch", "enabled") != nullptr);
+    CHECK(find_config_key(KeyScope::computer, "touch", "scroll_release_ms") != nullptr);
     CHECK(find_config_key(KeyScope::device, "placement", "nonsense") == nullptr);
 }
 
@@ -316,16 +325,6 @@ TEST_CASE("only the keys that make no sense to type are read-only") {
         const bool expected = id == "device.serial" || id == "detected.read_at";
         CHECK_MESSAGE(key.read_only == expected, id);
     }
-}
-
-TEST_CASE(
-    "an old device file that has accessory_fallback still reads, and it is not written back") {
-    DeviceConfig device;
-    CHECK(parse_device("[device]\nserial = ABC1\naccessory_fallback = true\n", device).empty());
-    CHECK(device.serial == "ABC1");
-    CHECK(format_device(device).find("accessory") == std::string::npos);
-    Config config;
-    CHECK(parse_globals("[daemon]\nbackend = auto\n", config).empty());
 }
 
 TEST_CASE("a device may pace its reports on its own") {

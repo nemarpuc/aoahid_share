@@ -28,14 +28,6 @@ is not trusted). `AOAHID_SHARE_SETTINGS_DIR` names another folder for all of it.
 `aoahid_share paths` prints them. Each configured Android device has a file of
 its own under `device/<serial>.ini`, created when you connect it.
 
-The first time the `settings` folder is made, what an older layout kept
-elsewhere (`config.ini` and `devices/*.ini` in the user's folder above,
-`state.ini` in `$XDG_STATE_HOME/aoahid_share` or `~/.local/state/aoahid_share`
-on Linux and `%LOCALAPPDATA%\aoahid_share` on Windows) is copied into it; the old
-files are left where they were. A `config.ini` with `[device.N]` sections is
-split into files under `device/`, and the original is kept beside it as
-`config.ini.0.2` (the split stops if that copy cannot be made).
-
 The daemon writes `daemon.log`, started over on each run: which backend it captures with, each device connecting or dropping,
 and every error. If no backend can start yet (the desktop's permission dialog
 is unanswered, for instance) the daemon keeps running, `status` shows
@@ -62,13 +54,17 @@ digit, `f1`..`f24`, `escape`, `space`, `tab`, `enter`, `backspace`, `insert`,
 | --- | --- | --- |
 | `buttons` | `5` | 1 to 8; `aoahid_share buttons` reports what your mice have |
 | `button_map` | empty | HID button for PC button 1, 2, ...; `1,3,2` swaps right and middle |
-| `[keyboard] enabled` | `true` | `false` shares the mouse only |
+| `[mouse] enabled` | `true` | `false` does not register the mouse on the device |
+| `[keyboard] enabled` | `true` | `false` does not register the keyboard on the device |
 
 ## `[media]`
 
 A hotkey per media key, empty for none: `previous`, `play_pause`, `next`,
 `brightness_up`, `brightness_down`. The settings window has a button for
 each under Actions on the Computer page (Tools tab).
+
+`enabled = false` does not register the media keys on the device (default
+`true`; it does not follow `[keyboard] enabled`).
 
 `target` chooses which device receives media keys: a serial or name targets
 that device wherever the input is. Empty (or `active`) sends to the device
@@ -89,6 +85,46 @@ cannot see the keyboard while the input is on the PC (`local_hotkeys=no` in
 The keyboard's own volume and media keys need no setting. While the input is
 on a device they go to that device and the computer does not act on them,
 on every backend but `macos`, which does not capture those keys.
+
+## `[touch]`
+
+Touchscreen mode registers a touchscreen on the device (a fourth input next to
+the mouse, keyboard and media keys). The mouse stays as the marker of where
+the cursor is; the left button, pressed where the cursor is, becomes a tap
+there, and moving while it is held drags. It needs the device's `width`,
+`height` and `rotation`; without them the touchscreen is not registered and
+`status` says what is missing (`touch`).
+
+| Key | Default | |
+| --- | --- | --- |
+| `[touch] enabled` | `false` | `true` turns the mouse button `tap_button` into a tap |
+| `tap_button` | `1` | 1 to 8; the mouse button that becomes a tap (the left one is 1); it need not be one of the `buttons` the mouse declares |
+| `scroll` | `0` | -2000 to 2000; pixels of the device's screen the finger moves, all at once, for each wheel notch (times `scroll_sensitivity`), from where the cursor is; `0` leaves the wheel a mouse wheel, a negative value reverses the direction |
+| `scroll_pan` | `0` | the same for the horizontal wheel |
+| `scroll_start_ms` | `1` | 0 to 2000, in milliseconds (fractions allowed, e.g. `0.25`); time from the swiping finger being put down to its move, for every notch; `0` moves it in the very next report |
+| `scroll_release_ms` | `200` | 0 to 2000, in milliseconds; time from the finger's move to its lift, for every notch; `0` lifts it in the report after the move |
+
+**Why the cursor stands still during a drag.** When a touchscreen and a mouse
+report at the same time, Android drops whichever was there first (observed on
+a Galaxy Tab S11; see [libaoahid's API.md](https://github.com/nemarpuc/libaoahid/blob/main/docs/API.md)).
+A mouse report in the middle of a drag would therefore cancel the finger. So
+while the tap button is held no mouse report is sent: the movement is summed,
+the finger follows where the cursor would be, and when the button is released
+the finger is lifted first and then everything that was summed goes out as one
+mouse report. The cursor appears to jump to the drop point at the release.
+After a drag the position estimate is less exact, because Android scales that
+one report as one movement, not as the many small steps it was calculated
+from.
+
+Two fingers are registered: the click uses the first, the scroll the second,
+so a scroll can go on while a button is held. Every wheel notch is a swipe of
+its own: the finger is put down where the cursor is, moved `scroll_start_ms`
+after that (so Android sees it down first), and lifted `scroll_release_ms`
+after the move; a notch that comes meanwhile lifts it first.
+While a finger is down no mouse report is sent (the same reason as for a
+drag above): movement that comes in meanwhile is summed and sent after the
+lift. How the position is turned into the touchscreen's own coordinates, for
+every rotation and mount, is in [docs/MATH.md](MATH.md#touch).
 
 ## `[motion]`
 
@@ -113,7 +149,7 @@ device in its own file.
 
 | Key | Default | |
 | --- | --- | --- |
-| `kill_server` | `true` | stop a running adb server before every scan that was asked for (a reload, `rescan`, `connect`), since a server that claimed a phone keeps it from being found; also when a phone's proxy is to start and the server holds its ADB interface (once, then the proxy is tried again), and once more on exit if a proxy was served, so that adb sees the phone over USB again |
+| `kill_server` | `true` | stop a running adb server before every scan that was asked for (the one made when the daemon starts, a reload, `rescan`, `connect`), since a server that claimed a phone keeps it from being found; also when a phone's proxy is to start and the server holds its ADB interface (once, then the proxy is tried again), and once more on exit if a proxy was served, so that adb sees the phone over USB again |
 | `path` | empty | the adb program, run only by "fill"; empty uses `PATH` |
 | `first_port` | `6555` | where the proxy ports start (1024 to 65535, not 5555 to 5585) |
 
@@ -132,9 +168,7 @@ whether pointer acceleration is on, and writes them, with the gain they give
 reopen any device. If the phone is waiting for the "Allow USB debugging"
 answer (a new computer), it waits up to 15 seconds for it, trying again; after
 that, fill again. A value the phone does not give is left as it was and is
-named in the answer. `enabled`, `connect`, `tune` and `restore_accel`
-(the daemon's own use of adb, which it no longer has) are read and ignored, and
-are not written back.
+named in the answer.
 
 On Linux with a glibc older than 2.34, or musl, an adb server started by `adb
 connect` can keep the proxy's port bound after the daemon exits (the
@@ -146,20 +180,17 @@ Each configured device has its own file named after its USB serial number
 (letters, digits, `-`, `_`, `.`; at most 64). A key left out takes the global
 value where there is one, else is not set: the daemon then says in the
 device's status what is missing, and does not guess it. A value is written as
-a number, and its line is left out when it was never given (`auto` or an empty
-value, as older files wrote them, still read as not set).
+a number, and its line is left out when it was never given (an empty value
+reads as not set).
 
 ### `[device]`
 
 | Key | Default | |
 | --- | --- | --- |
-| `serial` | empty | USB serial number; an older profile that named none is filed as `unassigned N.ini` until a device takes it |
+| `serial` | empty | USB serial number; a profile that names none is filed as `unassigned N.ini` until a device takes it |
 | `name` | empty | display name, at most 48 bytes, without `=`, `;`, `#`; it may not be another device's serial |
 | `enabled` | `true` | `false` keeps the device configured but left alone |
 | `hotkey` | empty | takes the input straight to this device |
-
-`accessory_fallback` (switching the phone to accessory mode when it refused HID)
-is no longer supported; a file that has it still reads.
 
 ### `[placement]`
 
@@ -211,12 +242,22 @@ by `fill`; its status names those that are not.
 Any of `sensitivity`, `sensitivity_y`, `scroll_sensitivity`, `entry`,
 `resync_width`, `enter_push`, `return_push`, `no_cross_while_button`,
 `report_rate_hz` from the global `[motion]` section: a device is paced by its own
-`report_rate_hz` when its file has one, else by the computer's. `gain_min`,
-`gain_max`, `match_physical` and `counts_per_pixel` are read and ignored.
+`report_rate_hz` when its file has one, else by the computer's.
 
-### `[keyboard]` (device override)
+### `[mouse]`, `[keyboard]` and `[media]` (device override)
 
-`enabled = true|false`: whether this device receives the keyboard.
+`enabled = true|false` in each: whether this device gets that input; a section
+the file leaves out follows config.ini. A running device has the matching
+input registered or removed on `reload`, without being opened again. One added
+this way takes no input for about 150 ms, while Android registers it.
+
+### `[touch]` (device override)
+
+Any of `enabled`, `tap_button`, `scroll`, `scroll_pan`, `scroll_start_ms` and `scroll_release_ms`
+from the global `[touch]` section; a key the file leaves out follows config.ini.
+A running device has the touchscreen registered or removed on `reload`, as for
+the mouse, keyboard and media keys; a change of the device's `width` or
+`height` registers it again with the new size.
 
 ### `[adb]` (device override)
 
@@ -240,6 +281,7 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `mode`, `gain` | `exact` or `curve`; pixels per count at low speed |
 | `segment`, `beside` | monitor, side, crossing span, device span (PC pixels) |
 | `position` | the tracked cursor range in the display's view space: x low, x high, y low, y high |
+| `touch`, `touch_error` | `off`, `on`, or `not set:` and what the touchscreen still needs; with touch on, how far a tap can be from the cursor: the width of the tracked range, x then y |
 | `reports`, `merged`, `depth` | USB reports sent; inputs summed into a report that was already waiting; reports waiting now |
 | `samples`, `queue_us`, `total_us` | over the last 256 reports (microseconds, as typical, 99 of 100, worst since opened): from an input reaching the daemon to the start of its USB call, and to the report's completion. The device's own delay is not included |
 | `realtime` | whether the sender thread got a real-time priority (needs `RLIMIT_RTPRIO`) |
@@ -257,7 +299,7 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 | Command | |
 | --- | --- |
 | `status` | state, backend, monitors, configured devices and newly detected devices; see [Status](#status) |
-| `connect SERIAL\|NAME` | open a device. One that has a file is opened as it is; a plugged-in device that has none is given a file first (nothing is read from it). Nothing else is touched. The daemon opens no device by itself: not when it starts, not on `reload`. A device that was connected and drops out (unplugged, a glitch) is opened again when it comes back, until `disconnect` or `forget` |
+| `connect SERIAL\|NAME` | open a device. One that has a file is opened as it is; a plugged-in device that has none is given a file first (nothing is read from it). Nothing else is touched. The daemon opens no device by itself: not when it starts, not on `reload`, and not when a device that has a file shows up in a scan. A device that was connected by this command and drops out (unplugged, a glitch) is opened again when it comes back, until `disconnect` or `forget` |
 | `disconnect SERIAL\|NAME` | close a device and leave it closed |
 | `fill SERIAL\|NAME` | read a connected device through its ADB proxy (which has to be on) and write what it says into its file; nothing is closed or reopened |
 | `forget SERIAL\|NAME` | remove a device and its configuration file |
@@ -265,11 +307,12 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 | `release` | bring input back to the computer |
 | `pause`, `resume` | pause or resume cursor crossing |
 | `resync` | re-reference the corner reference on the next crossing |
-| `rescan` | look for devices now and wait for the result. A scan is made only when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
-| `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the keyboard, the proxy, its port), and then it is opened again; no other device is opened |
+| `rescan` | look for devices now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
+| `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |
 | `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`) |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |
 | `probe SERIAL\|NAME move DX DY` | move the cursor by raw counts, up to 30000 |
+| `reports SERIAL\|NAME` | `ok`, then what the last reports to that device carried, one line each: `N MS REPORT TEXT` (the line's number, the clock in milliseconds, the report it went out in, and the call: mouse move/scroll/button, key, media, touch contact down/move/lift with its raw position). Recorded only for a few seconds after each ask |
 | `export [--device SERIAL\|NAME] FILE` | export the whole configuration, or one device, as one text file |
 | `import FILE` | check FILE, take it as the configuration or as one device, and reload; this computer's `[adb]` section is kept |
 | `buttons` | count the buttons of connected mice |

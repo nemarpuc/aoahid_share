@@ -15,10 +15,8 @@ namespace aoas {
 [[nodiscard]] std::string device_file_path(const std::string& serial);
 
 // Reads config.ini and every file under device/. A first run writes the
-// defaults. A config.ini from an older layout, which kept its devices in numbered
-// sections, is split into those files, the old one kept beside it as
-// config.ini.0.2. Empty on success, else which file and what is wrong; out
-// is then unchanged.
+// defaults. Empty on success, else which file and what is wrong; out is then
+// unchanged.
 [[nodiscard]] std::string load_store(Config& out);
 
 // Writes config.ini and one file per device, and removes the files of

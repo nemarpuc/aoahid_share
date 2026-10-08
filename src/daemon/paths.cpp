@@ -62,19 +62,6 @@ fs::path user_directory() {
 #endif
 }
 
-// Where the older layout kept the state file (the config was in user_directory()).
-fs::path legacy_state_directory() {
-#if defined(_WIN32)
-    return fs::path(env("LOCALAPPDATA")) / "aoahid_share";
-#elif defined(__APPLE__)
-    return user_directory();
-#else
-    const std::string base = env("XDG_STATE_HOME");
-    return (!base.empty() ? fs::path(base) : fs::path(env("HOME")) / ".local" / "state") /
-           "aoahid_share";
-#endif
-}
-
 #if defined(_WIN32)
 bool writable_directory(const fs::path& directory) {
     std::error_code error;
@@ -105,40 +92,6 @@ bool writable_directory(const fs::path& directory) {
 }
 #endif
 
-void copy_if_missing(const fs::path& from, const fs::path& to) {
-    std::error_code error;
-    // A link is not followed: only a file that is itself there is taken.
-    if (fs::symlink_status(from, error).type() == fs::file_type::regular && !fs::exists(to, error))
-        fs::copy_file(from, to, error);
-}
-
-// Settings an older layout kept elsewhere are copied, never moved, the
-// first time the program's own folder is used.
-void bring_old_settings(const fs::path& root) {
-    std::error_code error;
-    const fs::path old_config = user_directory();
-    const fs::path old_state = legacy_state_directory();
-    // The files the older layout kept under "devices": copied, so a
-    // program of that version still finds them.
-    if (fs::is_directory(root / "devices", error) && !fs::exists(root / "device", error)) {
-        fs::create_directories(root / "device", error);
-        for (const fs::directory_entry& entry : fs::directory_iterator(root / "devices", error)) {
-            if (entry.path().extension() == ".ini")
-                copy_if_missing(entry.path(), root / "device" / entry.path().filename());
-        }
-    }
-    // The state holds what is needed to put a phone's settings back.
-    copy_if_missing(old_state / "state.ini", root / "state.ini");
-    if (fs::exists(root / "config.ini", error))
-        return;
-    fs::create_directories(root / "device", error);
-    copy_if_missing(old_config / "config.ini", root / "config.ini");
-    for (const fs::directory_entry& entry : fs::directory_iterator(old_config / "devices", error)) {
-        if (entry.path().extension() == ".ini")
-            copy_if_missing(entry.path(), root / "device" / entry.path().filename());
-    }
-}
-
 fs::path find_settings_directory() {
     const std::string custom = env("AOAHID_SHARE_SETTINGS_DIR");
     if (!custom.empty()) {
@@ -149,13 +102,10 @@ fs::path find_settings_directory() {
     const fs::path exe_dir = executable_directory();
     // Inside an application bundle the folder is not the user's to fill.
     const bool bundled = exe_dir.generic_string().find(".app/Contents/") != std::string::npos;
-    if (!exe_dir.empty() && !bundled && writable_directory(exe_dir / "settings")) {
-        bring_old_settings(exe_dir / "settings");
+    if (!exe_dir.empty() && !bundled && writable_directory(exe_dir / "settings"))
         return exe_dir / "settings";
-    }
     std::error_code error;
     fs::create_directories(user_directory(), error);
-    bring_old_settings(user_directory());
     return user_directory();
 }
 

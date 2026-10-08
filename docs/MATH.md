@@ -57,6 +57,44 @@ m = 90 or 270:  (W, H) = (Hl, Wl)
 
 Everything below is in view space; the turn is applied last, once.
 
+## Touch
+
+A touchscreen reports absolute positions in the device's natural orientation
+(`Wn x Hn`), unlike a mouse, which Android turns itself. So the tracked
+position (view space) is converted in two steps. The mount is undone first
+(view space is display space turned `m` degrees clockwise):
+
+| m | display x | display y |
+| --- | --- | --- |
+| 0 | vx | vy |
+| 90 | vy | W - 1 - vx |
+| 180 | W - 1 - vx | H - 1 - vy |
+| 270 | H - 1 - vy | vx |
+
+Then the display rotation. Android turns a touchscreen's raw positions by the
+inverse of the display's orientation to get the position on the rotated
+display
+([`TouchInputMapper::computeInputTransforms`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/services/inputflinger/reader/mapper/TouchInputMapper.cpp),
+steps 2 to 5, with the rotations of
+[`ui::Transform::set`](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/libs/ui/Transform.cpp)).
+The conversion here is the inverse of that:
+
+| r | raw x | raw y |
+| --- | --- | --- |
+| 0 | dx | dy |
+| 90 | Wn - 1 - dy | dx |
+| 180 | Wn - 1 - dx | Hn - 1 - dy |
+| 270 | dy | Hn - 1 - dx |
+
+The result is rounded and clamped to `0..Wn-1`, `0..Hn-1`. The tap position is
+the midpoint of the tracked range, so it is as exact as the range is narrow
+(`exact` mode, or an edge that fixed it). AOSP does this on floating-point
+positions and flips about the size rather than the size less one, so with
+integer raw values the landing pixel can differ by one in rotations 90, 180 and
+270; that is far below what a tap needs. A touchscreen that is external and
+has no display of its own to follow is put on the internal display
+(`TouchInputMapper::findViewport`).
+
 ## Several monitors
 
 Only the outline of all monitors together can be crossed. Where two monitors

@@ -200,6 +200,37 @@ unsigned count_mouse_buttons() {
 unsigned count_mouse_buttons() { return 0; }
 #endif
 
+// What the phone is opened with.
+LinkOptions link_options_for(const Config& config, const DeviceConfig& device) {
+    LinkOptions options;
+    options.buttons = config.mouse_buttons;
+    options.mouse = mouse_of(config, device);
+    options.keyboard = keyboard_of(config, device);
+    options.media = media_of(config, device);
+    // The touchscreen Spec needs the natural size; without it there is no
+    // Node, and status says so (touch_state()).
+    options.touch = touch_of(config, device).enabled && device.width >= 2 && device.height >= 2;
+    options.touch_size = {device.width, device.height};
+    return options;
+}
+
+// What status says about touch.
+std::string touch_state(const Config& config, const DeviceConfig& device) {
+    if (!touch_of(config, device).enabled)
+        return "off";
+    std::string missing;
+    const auto lack = [&](const char* name) {
+        missing += (missing.empty() ? "" : ", ") + std::string(name);
+    };
+    if (device.width < 2)
+        lack("width");
+    if (device.height < 2)
+        lack("height");
+    if (device.rotation < 0)
+        lack("rotation");
+    return missing.empty() ? "on" : "not set: " + missing;
+}
+
 } // namespace
 
 Daemon::Daemon() = default;
@@ -255,13 +286,10 @@ void Daemon::adopt_config(Config loaded) {
         static_cast<void>(parse_hotkey(config_.devices[index].hotkey, device_hotkeys_[index]));
 }
 
-// What is fixed when a phone is opened: if none of it changes, the phone
-// stays open across a reload.
+// What the phone is opened with. Only the number of buttons is fixed by it:
+// the Nodes are added and removed on the open phone.
 LinkOptions Daemon::link_options_of(const DeviceConfig& device) const {
-    LinkOptions options;
-    options.buttons = config_.mouse_buttons;
-    options.keyboard = keyboard_of(config_, device);
-    return options;
+    return link_options_for(config_, device);
 }
 
 void Daemon::rebuild_phones() {
@@ -285,8 +313,7 @@ void Daemon::rebuild_phones() {
             if (old == nullptr || old->link < 0 || !device.enabled || device.serial.empty() ||
                 old->serial != device.serial || old->port != port ||
                 old->wants_proxy != device.adb_proxy ||
-                old->link_options.buttons != options.buttons ||
-                old->link_options.keyboard != options.keyboard)
+                old->link_options.buttons != options.buttons)
                 continue;
             phone = std::move(old);
             break;
@@ -295,8 +322,11 @@ void Daemon::rebuild_phones() {
             phone = std::make_unique<Phone>();
         phone->config = device;
         phone->port = port;
-        // A phone that stays open is paced as the new files say.
+        // A phone that stays open is paced as the new files say, and has the
+        // Nodes the files name.
         if (phone->link >= 0) {
+            usb_.set_nodes(phone->link, options);
+            phone->link_options = options;
             const ReportRate rate = report_rate_of(config_, device);
             usb_.set_rate(phone->link, rate.hz, rate.every);
         }
@@ -462,8 +492,9 @@ void Daemon::device_loop() {
     uint64_t owed = 0;
     for (;;) {
         // A reload asks for a scan now, which the scan period does not hold
-        // back.
-        bool asked = false;
+        // back. The first pass is a scan too: the daemon looks for devices
+        // when it starts.
+        bool asked = first;
         if (!first) {
             std::unique_lock<std::mutex> lock(device_mutex_);
             device_wake_.wait_for(lock, health_period, [this] { return stopping_ || wake_; });
@@ -532,16 +563,6 @@ void Daemon::device_loop() {
                         drop(index, "unplugged");
                 }
             }
-            for (const PhoneInfo& info : found) {
-                if (plugged_.count(info.serial) == 0) {
-                    for (const DeviceConfig& d : config.devices) {
-                        if (d.serial == info.serial && d.enabled) {
-                            wanted_.insert(info.serial);
-                            break;
-                        }
-                    }
-                }
-            }
             claimed.clear();
             missing.clear();
             for (size_t index = 0; index < phones_.size(); ++index) {
@@ -601,9 +622,7 @@ Daemon::Opened Daemon::open_phone(const size_t phone, const size_t scan_index, c
     opened.phone = phone;
     opened.serial = serial;
     opened.port = port;
-    LinkOptions options;
-    options.buttons = config.mouse_buttons;
-    options.keyboard = keyboard_of(config, device);
+    const LinkOptions options = link_options_for(config, device);
     opened.options = options;
     opened.wants_proxy = device.adb_proxy;
     opened.link = usb_.open(scan_index, options, opened.note);
@@ -901,6 +920,17 @@ void Daemon::relayout() {
         }
         phone.session->configure(phone.portal, phone.view, phone.config.mount_rotation,
                                  phone.motion, phone.accel, std::move(neighbours), phone.has_pc);
+        const Touch touch = touch_of(config_, phone.config);
+        TouchSetup setup;
+        setup.enabled = touch.enabled && phone.link_options.touch;
+        setup.natural = phone.natural;
+        setup.rotation = phone.rotation;
+        setup.button = touch.button;
+        setup.scroll = touch.scroll;
+        setup.scroll_pan = touch.scroll_pan;
+        setup.release_s = touch.release_ms / 1000.0;
+        setup.start_s = touch.start_ms / 1000.0;
+        phone.session->set_touch(setup);
         phone.stage = Stage::ready;
         phone.status.clear();
         if (!phone.note.empty())
@@ -1359,6 +1389,7 @@ void Daemon::publish_status() {
         entry.link = phone->link;
         entry.placed = phone->layout_ok && phone->link >= 0;
         entry.cell = phone->cell;
+        entry.touch_on = touch_of(config_, phone->config).enabled;
         // A profile no device has taken yet has no serial to be listed by.
         if (!entry.serial.empty()) {
             std::ostringstream lines;
@@ -1372,6 +1403,7 @@ void Daemon::publish_status() {
                   << "\n";
             lines << prefix << "plugged=" << (plugged_.count(entry.serial) != 0 ? "yes" : "no")
                   << "\n";
+            lines << prefix << "touch=" << touch_state(config_, phone->config) << "\n";
             if (!phone->fill_note.empty())
                 lines << prefix << "fill=" << (phone->fill_ok ? "ok " : "error ")
                       << one_line(phone->fill_note) << "\n";
@@ -1454,6 +1486,9 @@ std::string Daemon::render_status() {
             const PositionCell::Value at = phone.cell->load();
             out << prefix << "position=" << at.x_lo << " " << at.x_hi << " " << at.y_lo << " "
                 << at.y_hi << "\n";
+            if (phone.touch_on)
+                out << prefix << "touch_error=" << (at.x_hi - at.x_lo) << " " << (at.y_hi - at.y_lo)
+                    << "\n";
         }
     }
     return out.str();
@@ -1603,6 +1638,17 @@ std::string Daemon::command(const std::string& line) {
                     phone->session->resync();
                 answer = "ok";
             }
+        } else if (verb == "reports") {
+            // What the last reports to a connected device carried, one line
+            // each. Asking switches the recording on for a few seconds.
+            const size_t index = phone_named(rest_of(words));
+            if (index >= phones_.size() || phones_[index]->link < 0) {
+                answer = "error=that device is not connected";
+            } else {
+                answer = "ok\n";
+                for (const std::string& line : usb_.trace(phones_[index]->link))
+                    answer += line + "\n";
+            }
         } else if (verb == "connect") {
             // Opens a device. One that has a file is opened as it is; a
             // plugged-in device that has none is given a file first (nothing
@@ -1635,7 +1681,7 @@ std::string Daemon::command(const std::string& line) {
                     if (active_ >= 0)
                         leave();
                     Config next = config_;
-                    // A profile kept from an older config that named no device is this
+                    // A profile that names no device is this
                     // one's now; otherwise it starts from nothing.
                     size_t index = next.devices.size();
                     for (size_t i = 0; i < next.devices.size() && index == next.devices.size();

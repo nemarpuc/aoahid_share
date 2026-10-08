@@ -51,7 +51,7 @@ struct FakeAndroid final : Sink {
         ++jumps;
         move(counts);
     }
-    void scroll(int, int) override {}
+    void scroll(const int wheel, const int pan) override { wheels.emplace_back(wheel, pan); }
     void button(const unsigned button, const bool down) override {
         if (down)
             buttons_down |= 1U << button;
@@ -65,6 +65,21 @@ struct FakeAndroid final : Sink {
             std::erase(keys_down, usage);
     }
     void media(uint16_t, bool) override {}
+    struct TouchCall {
+        unsigned contact;
+        int x;
+        int y;
+        bool down;
+        bool hold;
+    };
+    std::vector<TouchCall> touches;
+    std::vector<std::pair<int, int>> wheels;
+    void touch(const unsigned contact, const int x, const int y, const bool down) override {
+        touches.push_back({contact, x, y, down, false});
+    }
+    void touch_hold(const unsigned contact, const int x, const int y, double) override {
+        touches.push_back({contact, x, y, true, true});
+    }
 
     // The cursor in view space, derived independently of to_device_delta().
     [[nodiscard]] double view_x() const {
@@ -412,22 +427,9 @@ TEST_CASE("an imported config keeps this computer's adb section") {
     CHECK(!imported.devices[0].adb_proxy);
 }
 
-TEST_CASE("the switches of the old automatic adb are read and not written back") {
-    Config config;
-    REQUIRE(parse_globals("[adb]\nenabled = true\nconnect = true\ntune = true\n"
-                          "restore_accel = false\nkill_server = false\n",
-                          config)
-                .empty());
-    CHECK(!config.adb_kill_server);
-    const std::string written = format_globals(config);
-    CHECK(written.find("tune") == std::string::npos);
-    CHECK(written.find("restore_accel") == std::string::npos);
-    CHECK(written.find("connect") == std::string::npos);
+TEST_CASE("a value that was never given is written as nothing, and reads back so") {
     DeviceConfig device;
-    REQUIRE(parse_device("[device]\nserial = S1\n[adb]\nconnect = true\ntune = false\n", device)
-                .empty());
-    CHECK(!device.adb_proxy);
-    // A value that was never given is written as nothing, and reads back so.
+    REQUIRE(parse_device("[device]\nserial = S1\n", device).empty());
     const std::string file = format_device(device);
     CHECK(file.find("auto") == std::string::npos);
     // Nothing is written for what was not given, not even an empty value.
@@ -440,13 +442,6 @@ TEST_CASE("the switches of the old automatic adb are read and not written back")
     CHECK(back.rotation == -1);
     CHECK(back.accel == AccelSetting::automatic);
     CHECK(back.segment_start == centred_start);
-    // `auto`, as earlier versions wrote it, still reads.
-    REQUIRE(parse_device("[device]\nserial = S1\n[detected]\nwidth = auto\naccel = auto\n"
-                         "[placement]\nrotation = auto\n",
-                         back)
-                .empty());
-    CHECK(back.width == 0);
-    CHECK(back.rotation == -1);
 }
 
 TEST_CASE("the cursor crosses from one device to the one beside it") {
@@ -661,6 +656,8 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
                        "park = false\n"
                        "[keyboard]\n"
                        "enabled = false\n"
+                       "[mouse]\n"
+                       "enabled = false\n"
                        "[adb]\n"
                        "port = 7000\n"
                        "proxy = true\n";
@@ -701,6 +698,12 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     CHECK(motion.no_cross_while_button);
     CHECK(!keyboard_of(config, device));
     CHECK(keyboard_of(config, DeviceConfig{}));
+    CHECK(!mouse_of(config, device));
+    CHECK(mouse_of(config, DeviceConfig{}));
+    // Media is its own switch: it does not follow the keyboard.
+    CHECK(media_of(config, device));
+    config.media = false;
+    CHECK(!media_of(config, DeviceConfig{}));
 
     // A serial names a file; a name is shown and typed. Both come from
     // outside, so only plain ones are let in.
@@ -818,7 +821,7 @@ TEST_CASE("devices get their ports, and what clashes between them is refused") {
     CHECK_FALSE(validate_config(chain).empty());
 }
 
-TEST_CASE("everything in one text, and a 0.2 config, read back as devices") {
+TEST_CASE("everything in one text reads back as devices") {
     Config config;
     config.motion.sensitivity = 1.5;
     config.devices.resize(2);
@@ -835,62 +838,306 @@ TEST_CASE("everything in one text, and a 0.2 config, read back as devices") {
     CHECK(back.devices[1].beside == "A");
     CHECK(back.devices[1].motion.scroll_sensitivity == 0.5);
 
-    // What 0.2 wrote: numbered sections in the one file.
-    const char* old = "[motion]\n"
-                      "sensitivity = 2\n"
-                      "[device.1]\n"
-                      "serial = R5GL153Y5EX\n"
-                      "monitor = HDMI-A-1\n"
-                      "side = left\n"
-                      "segment_start = 506\n"
-                      "segment_length = auto\n"
-                      "corner_margin = 11%\n"
-                      "mount_rotation = 270\n"
-                      "width = 1600\n"
-                      "height = 2560\n"
-                      "gain = 2.1692\n"
-                      "sensitivity = \n"
-                      "adb_port = 6555\n"
-                      "[device.2]\n"
-                      "sensitivity = 0.5\n"
-                      "adb_port = 7000\n";
-    Config migrated;
-    REQUIRE(parse_config(old, migrated).empty());
-    CHECK(migrated.motion.sensitivity == 2.0);
-    REQUIRE(migrated.devices.size() == 2);
-    const DeviceConfig& first = migrated.devices[0];
-    CHECK(first.serial == "R5GL153Y5EX");
-    CHECK(first.monitor == "HDMI-A-1");
-    CHECK(first.side == Side::left);
-    CHECK(first.segment_start == 506);
-    CHECK(first.segment_length == -1);
-    CHECK(first.mount_rotation == 270);
-    CHECK(first.width == 1600);
-    CHECK(first.gain == doctest::Approx(2.1692));
-    CHECK(!first.motion.sensitivity.has_value());
-    CHECK(first.adb_port == 6555);
-    // A section that named no device waits for one.
-    CHECK(migrated.devices[1].serial.empty());
-    CHECK(migrated.devices[1].motion.sensitivity == 0.5);
-    CHECK(migrated.devices[1].adb_port == 7000);
-
     // No more devices than the limit, however the text names them.
     std::string many = "[motion]\n";
     for (size_t index = 0; index <= max_devices; ++index)
         many += "--- device ---\n[device]\nserial = S" + std::to_string(index) + "\n";
     Config flood;
     CHECK_FALSE(parse_config(many, flood).empty());
-    many.clear();
-    for (size_t index = 0; index <= max_devices; ++index)
-        many += "[device.1]\n";
-    CHECK_FALSE(parse_config(many, flood).empty());
+}
 
-    Config untouched;
-    CHECK_FALSE(parse_config("[device.1]\nadb_port = 5555\n", untouched).empty());
-    CHECK_FALSE(
-        parse_config("[device.1]\nadb_port = 7000\n[device.2]\nadb_port = 7000\n", untouched)
-            .empty());
-    CHECK(untouched.devices.empty());
+TEST_CASE("a view point maps to the touch device's raw coordinates") {
+    const Size natural{1600, 2560};
+    CHECK(to_touch_point(natural, 0, 0, 10.0, 20.0).x == 10);
+    CHECK(to_touch_point(natural, 0, 0, 10.0, 20.0).y == 20);
+    // Rotation 90: display (dx, dy) is raw (Wn-1-dy, dx).
+    const TouchPoint r90 = to_touch_point(natural, 90, 0, 100.0, 30.0);
+    CHECK(r90.x == 1600 - 1 - 30);
+    CHECK(r90.y == 100);
+    const TouchPoint r180 = to_touch_point(natural, 180, 0, 100.0, 30.0);
+    CHECK(r180.x == 1600 - 1 - 100);
+    CHECK(r180.y == 2560 - 1 - 30);
+    // Rotation 270: display (dx, dy) is raw (dy, Hn-1-dx).
+    const TouchPoint r270 = to_touch_point(natural, 270, 0, 100.0, 30.0);
+    CHECK(r270.x == 30);
+    CHECK(r270.y == 2560 - 1 - 100);
+    // Mount 90: view (vx, vy) is display (vy, W-1-vx), W being the view width.
+    const Size view90 = view_size(natural, 0, 90);
+    const TouchPoint m90 = to_touch_point(natural, 0, 90, 100.0, 30.0);
+    CHECK(m90.x == 30);
+    CHECK(m90.y == view90.w - 1 - 100);
+}
+
+TEST_CASE("every rotation and mount keeps the touch point on the device") {
+    const Size natural{1600, 2560};
+    for (const int rotation : {0, 90, 180, 270}) {
+        for (const int mount : {0, 90, 180, 270}) {
+            const Size view = view_size(natural, rotation, mount);
+            // The four corners of the view land on four different corners of
+            // the raw area.
+            std::vector<TouchPoint> corners;
+            for (const double x : {0.0, view.w - 1.0}) {
+                for (const double y : {0.0, view.h - 1.0}) {
+                    const TouchPoint p = to_touch_point(natural, rotation, mount, x, y);
+                    CHECK((p.x == 0 || p.x == natural.w - 1));
+                    CHECK((p.y == 0 || p.y == natural.h - 1));
+                    corners.push_back(p);
+                }
+            }
+            for (size_t a = 0; a < corners.size(); ++a) {
+                for (size_t b = a + 1; b < corners.size(); ++b)
+                    CHECK((corners[a].x != corners[b].x || corners[a].y != corners[b].y));
+            }
+            // A point outside the view is clamped, never wrapped.
+            const TouchPoint far = to_touch_point(natural, rotation, mount, 1e6, -1e6);
+            CHECK(far.x >= 0);
+            CHECK(far.x <= natural.w - 1);
+            CHECK(far.y >= 0);
+            CHECK(far.y <= natural.h - 1);
+        }
+    }
+}
+
+TEST_CASE("the touch settings are read, written back and overridden per device") {
+    Config config;
+    REQUIRE(parse_globals("[touch]\nenabled = true\nscroll = 120\nscroll_pan = -80\n"
+                          "scroll_release_ms = 300\ntap_button = 2\n",
+                          config)
+                .empty());
+    CHECK(config.touch.enabled);
+    CHECK(config.touch.scroll == 120);
+    CHECK(config.touch.scroll_pan == -80);
+    CHECK(config.touch.release_ms == 300);
+    CHECK(config.touch.button == 2);
+    Config back;
+    REQUIRE(parse_globals(format_globals(config), back).empty());
+    CHECK(format_globals(back) == format_globals(config));
+
+    DeviceConfig device;
+    REQUIRE(parse_device("[device]\nserial = S1\n[touch]\nenabled = false\nscroll = 0\n", device)
+                .empty());
+    const Touch seen = touch_of(config, device);
+    CHECK_FALSE(seen.enabled);
+    CHECK(seen.scroll == 0);
+    // What the file leaves out follows config.ini.
+    CHECK(seen.scroll_pan == -80);
+    CHECK(seen.release_ms == 300);
+    CHECK(seen.button == 2);
+    DeviceConfig again;
+    REQUIRE(parse_device(format_device(device), again).empty());
+    CHECK(format_device(again) == format_device(device));
+
+    // Values out of range, and unknown keys, are refused.
+    Config bad;
+    CHECK_FALSE(parse_globals("[touch]\nscroll = 5000\n", bad).empty());
+    CHECK_FALSE(parse_globals("[touch]\nscroll_release_ms = -1\n", bad).empty());
+    CHECK_FALSE(parse_globals("[touch]\ntap_button = 0\n", bad).empty());
+    CHECK_FALSE(parse_globals("[touch]\nnonsense = 1\n", bad).empty());
+}
+
+namespace {
+
+struct TouchRig {
+    FakeAndroid phone;
+    Session session{phone};
+    Size natural{1600, 2560};
+    int rotation;
+    int mount;
+    explicit TouchRig(const int rotation_ = 0, const int mount_ = 0)
+        : rotation(rotation_), mount(mount_) {
+        phone.view = phone.logical = view_size(natural, rotation, mount);
+        Portal portal;
+        portal.side = Side::right;
+        portal.anchor = portal.segment = {0, 1079};
+        portal.android_length = phone.view.h;
+        session.configure(portal, phone.view, mount, MotionConfig{}, AccelModel{});
+        TouchSetup setup;
+        setup.enabled = true;
+        setup.natural = natural;
+        setup.rotation = rotation;
+        setup.button = 1;
+        setup.scroll = 100;
+        setup.scroll_pan = 100;
+        setup.release_s = 0.2;
+        session.set_touch(setup);
+        session.enter(100, 1.0);
+    }
+    // Where the session's tracked cursor is, in the device's raw coordinates.
+    [[nodiscard]] TouchPoint here() const {
+        return to_touch_point(natural, rotation, mount, session.tracker().x().mid(),
+                              session.tracker().y().mid());
+    }
+};
+
+} // namespace
+
+TEST_CASE("the left button taps at the tracked position and the others stay mouse buttons") {
+    TouchRig rig;
+    rig.session.button(1, true);
+    REQUIRE(rig.phone.touches.size() == 1);
+    CHECK(rig.phone.touches[0].contact == 0);
+    CHECK(rig.phone.touches[0].down);
+    CHECK(rig.phone.touches[0].x == rig.here().x);
+    CHECK(rig.phone.touches[0].y == rig.here().y);
+    CHECK(rig.phone.buttons_down == 0);
+    rig.session.button(1, false);
+    REQUIRE(rig.phone.touches.size() == 2);
+    CHECK_FALSE(rig.phone.touches[1].down);
+    rig.session.button(2, true);
+    CHECK(rig.phone.buttons_down == (1U << 2));
+    CHECK(rig.phone.touches.size() == 2);
+}
+
+TEST_CASE("moving while the tap is held drags contact 0") {
+    TouchRig rig;
+    rig.session.button(1, true);
+    rig.session.motion(30.0, 10.0, 1.1);
+    REQUIRE(rig.phone.touches.size() == 2);
+    CHECK(rig.phone.touches[1].contact == 0);
+    CHECK(rig.phone.touches[1].down);
+    CHECK(rig.phone.touches[1].x == rig.here().x);
+    CHECK(rig.phone.touches[1].y == rig.here().y);
+}
+
+TEST_CASE("a wheel notch swipes contact 1 by the scroll value, independent of contact 0") {
+    TouchRig rig;
+    rig.session.button(1, true);
+    rig.phone.touches.clear();
+    const TouchPoint start = rig.here();
+    rig.session.scroll(1.0, 0.0);
+    // The finger is first put down where the cursor is, then moved: a swipe,
+    // not a tap one notch away. A positive wheel scrolls the view up, so the
+    // content and the finger go down. The lift is the sink's, on a timer.
+    REQUIRE(rig.phone.touches.size() == 2);
+    CHECK(rig.phone.touches[0].contact == 1);
+    CHECK(rig.phone.touches[0].down);
+    CHECK_FALSE(rig.phone.touches[0].hold);
+    CHECK(rig.phone.touches[0].x == start.x);
+    CHECK(rig.phone.touches[0].y == start.y);
+    CHECK(rig.phone.touches[1].contact == 1);
+    CHECK(rig.phone.touches[1].hold);
+    CHECK(rig.phone.touches[1].x == start.x);
+    CHECK(rig.phone.touches[1].y == start.y + 100);
+    // Every notch is a swipe of its own: the one before is lifted, and the
+    // next starts again where the cursor is, not one notch further.
+    rig.session.scroll(1.0, 0.0);
+    REQUIRE(rig.phone.touches.size() == 5);
+    CHECK_FALSE(rig.phone.touches[2].down);
+    CHECK(rig.phone.touches[2].y == start.y + 100);
+    CHECK(rig.phone.touches[3].down);
+    CHECK(rig.phone.touches[3].y == start.y);
+    CHECK(rig.phone.touches[4].y == start.y + 100);
+    // The wheel was taken: no mouse wheel went out.
+    CHECK(rig.phone.wheels.empty());
+}
+
+TEST_CASE("a notch that cannot move the finger does not tap") {
+    TouchRig rig;
+    // Push the cursor against the top edge, then scroll up: the finger would
+    // be put down at the edge and lifted without moving, which is a tap.
+    rig.session.motion(0.0, -5000.0, 1.5);
+    rig.phone.touches.clear();
+    rig.session.scroll(-1.0, 0.0);
+    CHECK(rig.phone.touches.empty());
+    // The other way it moves.
+    rig.session.scroll(1.0, 0.0);
+    CHECK_FALSE(rig.phone.touches.empty());
+}
+
+TEST_CASE("changing the touch setup lifts a contact that is down") {
+    TouchRig rig;
+    rig.session.button(1, true);
+    rig.session.scroll(1.0, 0.0);
+    rig.phone.touches.clear();
+    TouchSetup off;
+    off.natural = rig.natural;
+    rig.session.set_touch(off);
+    int lifts0 = 0;
+    int lifts1 = 0;
+    for (const auto& call : rig.phone.touches) {
+        if (!call.down && call.contact == 0)
+            ++lifts0;
+        if (!call.down && call.contact == 1)
+            ++lifts1;
+    }
+    CHECK(lifts0 == 1);
+    CHECK(lifts1 == 1);
+    // Switched on again, a movement places nothing: no button is held.
+    TouchSetup on;
+    on.enabled = true;
+    on.natural = rig.natural;
+    rig.session.set_touch(on);
+    rig.phone.touches.clear();
+    rig.session.motion(10.0, 10.0, 3.0);
+    CHECK(rig.phone.touches.empty());
+}
+
+TEST_CASE("a tap button above the mouse's button count still taps") {
+    TouchRig rig;
+    TouchSetup setup;
+    setup.enabled = true;
+    setup.natural = rig.natural;
+    setup.button = 7;
+    rig.session.set_touch(setup);
+    rig.session.button(7, true);
+    REQUIRE(rig.phone.touches.size() == 1);
+    CHECK(rig.phone.touches[0].contact == 0);
+    CHECK(rig.phone.touches[0].down);
+}
+
+TEST_CASE("a swipe stays on the display") {
+    TouchRig rig;
+    for (int notch = 0; notch < 100; ++notch)
+        rig.session.scroll(-1.0, 1.0);
+    REQUIRE_FALSE(rig.phone.touches.empty());
+    for (const auto& call : rig.phone.touches) {
+        CHECK(call.x >= 0);
+        CHECK(call.x < rig.natural.w);
+        CHECK(call.y >= 0);
+        CHECK(call.y < rig.natural.h);
+    }
+}
+
+TEST_CASE("a wheel stays a mouse wheel while touch scroll is 0") {
+    TouchRig rig;
+    TouchSetup setup;
+    setup.enabled = true;
+    setup.natural = rig.natural;
+    rig.session.set_touch(setup);
+    rig.session.scroll(2.0, 0.0);
+    CHECK(rig.phone.touches.empty());
+    REQUIRE(rig.phone.wheels.size() == 1);
+    CHECK(rig.phone.wheels[0].first == 2);
+}
+
+TEST_CASE("leaving lifts the touch contacts") {
+    TouchRig rig;
+    rig.session.button(1, true);
+    rig.session.scroll(1.0, 0.0);
+    rig.phone.touches.clear();
+    rig.session.leave();
+    int lifts0 = 0;
+    int lifts1 = 0;
+    for (const auto& call : rig.phone.touches) {
+        if (!call.down && call.contact == 0)
+            ++lifts0;
+        if (!call.down && call.contact == 1)
+            ++lifts1;
+    }
+    CHECK(lifts0 == 1);
+    CHECK(lifts1 == 1);
+}
+
+TEST_CASE("the tap follows every rotation and mount") {
+    for (const int rotation : {0, 90, 180, 270}) {
+        for (const int mount : {0, 90, 180, 270}) {
+            TouchRig rig(rotation, mount);
+            rig.session.button(1, true);
+            REQUIRE(rig.phone.touches.size() == 1);
+            CHECK(rig.phone.touches[0].x == rig.here().x);
+            CHECK(rig.phone.touches[0].y == rig.here().y);
+        }
+    }
 }
 
 TEST_CASE("the position cell hands over a whole range, never half of two") {
@@ -922,23 +1169,6 @@ TEST_CASE("the position cell hands over a whole range, never half of two") {
     stop.store(true);
     writer.join();
     CHECK(whole);
-}
-
-TEST_CASE("the keys that matched the PC's screen are read and ignored") {
-    Config config;
-    REQUIRE(parse_globals("[motion]\nmatch_physical = false\ncounts_per_pixel = 2.5\n"
-                          "sensitivity = 1.5\n",
-                          config)
-                .empty());
-    CHECK(config.motion.sensitivity == 1.5);
-    // They are not written back.
-    CHECK(format_globals(config).find("match_physical") == std::string::npos);
-    CHECK(format_globals(config).find("counts_per_pixel") == std::string::npos);
-
-    // In a device's file they must not turn into some other setting.
-    DeviceConfig device;
-    REQUIRE(parse_device("[motion]\nmatch_physical = true\n", device).empty());
-    CHECK(format_device(device).find("[motion]") == std::string::npos);
 }
 
 TEST_CASE("the gain follows Android's pointer speed and density") {

@@ -154,7 +154,55 @@ bool to_report_rate(const std::string_view value, ReportRate& out) {
     return true;
 }
 
+bool set_touch_patch(TouchPatch& p, const std::string_view key, const std::string_view value) {
+    int number = 0;
+    if (key == "enabled") {
+        bool on = false;
+        if (!to_bool(value, on))
+            return false;
+        p.enabled = on;
+        return true;
+    }
+    if (key == "scroll" || key == "scroll_pan") {
+        if (!to_int(value, -2000, 2000, number))
+            return false;
+        (key == "scroll" ? p.scroll : p.scroll_pan) = number;
+        return true;
+    }
+    if (key == "scroll_release_ms") {
+        if (!to_int(value, 0, 2000, number))
+            return false;
+        p.release_ms = number;
+        return true;
+    }
+    if (key == "scroll_start_ms") {
+        double ms = 0.0;
+        if (!to_double(value, 0.0, 2000.0, ms))
+            return false;
+        p.start_ms = ms;
+        return true;
+    }
+    if (key == "tap_button") {
+        if (!to_int(value, 1, 8, number))
+            return false;
+        p.button = static_cast<unsigned>(number);
+        return true;
+    }
+    return false;
+}
+
+void apply_touch(Touch& touch, const TouchPatch& p) noexcept {
+    touch.enabled = p.enabled.value_or(touch.enabled);
+    touch.scroll = p.scroll.value_or(touch.scroll);
+    touch.scroll_pan = p.scroll_pan.value_or(touch.scroll_pan);
+    touch.release_ms = p.release_ms.value_or(touch.release_ms);
+    touch.start_ms = p.start_ms.value_or(touch.start_ms);
+    touch.button = p.button.value_or(touch.button);
+}
+
 bool set_mouse(Config& c, const std::string_view key, const std::string_view value) {
+    if (key == "enabled")
+        return to_bool(value, c.mouse);
     if (key == "buttons") {
         int buttons = 0;
         if (!to_int(value, 1, 8, buttons))
@@ -176,10 +224,6 @@ bool set_motion(Motion& m, const std::string_view key, const std::string_view va
         }
         return to_double(value, 0.05, 20.0, m.sensitivity_y);
     }
-    // Earlier versions matched the distance on the PC's screen; the movement
-    // is now sent as it comes. The keys are read and ignored.
-    if (key == "match_physical" || key == "counts_per_pixel")
-        return true;
     if (key == "scroll_sensitivity")
         return to_double(value, 0.05, 20.0, m.scroll_sensitivity);
     if (key == "entry") {
@@ -267,12 +311,6 @@ bool set_global_motion(Config& c, const std::string_view key, const std::string_
         c.report_every = rate.every;
         return true;
     }
-    // The range a gain nobody had given was taken from: there is no such
-    // gain any more, but an old file still reads.
-    if (key == "gain_min" || key == "gain_max") {
-        double ignored = 0.0;
-        return to_double(value, 0.01, 100.0, ignored);
-    }
     return set_motion(c.motion, key, value);
 }
 
@@ -286,13 +324,6 @@ bool to_port(const std::string_view value, uint16_t& out) noexcept {
 }
 
 bool set_adb(Config& c, const std::string_view key, const std::string_view value) {
-    // `enabled`, `connect`, `tune` and `restore_accel` were switches of the
-    // daemon's own use of adb, which it no longer has: an old file still
-    // reads, and they are not written back.
-    if (key == "enabled" || key == "connect" || key == "tune" || key == "restore_accel") {
-        bool ignored = false;
-        return to_bool(value, ignored);
-    }
     if (key == "kill_server")
         return to_bool(value, c.adb_kill_server);
     if (key == "path") {
@@ -306,8 +337,8 @@ bool set_adb(Config& c, const std::string_view key, const std::string_view value
 
 bool set_auto_int(const std::string_view value, const int low, const int high, const int unset,
                   int& out) noexcept {
-    // Empty is a value not given; `auto` is how older files wrote it.
-    if (value.empty() || value == "auto") {
+    // Empty is a value not given.
+    if (value.empty()) {
         out = unset;
         return true;
     }
@@ -316,7 +347,7 @@ bool set_auto_int(const std::string_view value, const int low, const int high, c
 
 bool set_auto_double(const std::string_view value, const double low, const double high,
                      double& out) noexcept {
-    if (value.empty() || value == "auto") {
+    if (value.empty()) {
         out = 0.0;
         return true;
     }
@@ -394,7 +425,7 @@ bool set_placement(DeviceConfig& d, const std::string_view key, const std::strin
     if (key == "monitor_diagonal_inch")
         return set_auto_double(value, 1.0, 1000.0, d.monitor_diagonal_inch);
     if (key == "rotation") {
-        if (value.empty() || value == "auto") {
+        if (value.empty()) {
             d.rotation = -1;
             return true;
         }
@@ -423,31 +454,6 @@ bool set_detected(DeviceConfig& d, const std::string_view key, const std::string
     if (key == "read_at")
         return to_name(value, d.read_at);
     return false;
-}
-
-// A [device.N] section of an older config.
-bool set_legacy_device(DeviceConfig& d, const std::string_view key, const std::string_view value) {
-    if (key == "serial")
-        return to_serial(value, d.serial);
-    // Switching a phone to accessory mode was dropped; an old file still reads.
-    if (key == "accessory_fallback") {
-        bool ignored = false;
-        return to_bool(value, ignored);
-    }
-    if (key == "segment_start")
-        return set_placement(d, "start", value);
-    if (key == "segment_length")
-        return set_placement(d, "length", value);
-    if (key == "mount_rotation")
-        return set_placement(d, "turn_input", value);
-    if (key == "sensitivity") {
-        if (value.empty())
-            return true;
-        return set_motion_patch(d.motion, key, value);
-    }
-    if (key == "adb_port")
-        return to_port(value, d.adb_port);
-    return set_placement(d, key, value) || set_detected(d, key, value);
 }
 
 std::string line_error(const size_t line, const std::string& what) {
@@ -656,8 +662,22 @@ double effective_gain(const DeviceConfig& device) noexcept {
                              : low_speed_gain(device.pointer_speed, device.density_dpi);
 }
 
+bool mouse_of(const Config& config, const DeviceConfig& device) noexcept {
+    return device.mouse.value_or(config.mouse);
+}
+
 bool keyboard_of(const Config& config, const DeviceConfig& device) noexcept {
     return device.keyboard.value_or(config.keyboard);
+}
+
+bool media_of(const Config& config, const DeviceConfig& device) noexcept {
+    return device.media.value_or(config.media);
+}
+
+Touch touch_of(const Config& config, const DeviceConfig& device) noexcept {
+    Touch touch = config.touch;
+    apply_touch(touch, device.touch);
+    return touch;
 }
 
 uint16_t adb_port_of(const Config& config, const size_t index) noexcept {
@@ -709,7 +729,7 @@ size_t find_device(const Config& config, const std::string_view name_or_serial) 
 
 std::string parse_globals(const std::string_view text, Config& out) {
     Config config;
-    enum class Section { daemon, mouse, keyboard, media, motion, adb, legacy_device };
+    enum class Section { daemon, mouse, keyboard, media, touch, motion, adb };
     Section section = Section::daemon;
     const std::string error = read_ini(
         text,
@@ -722,19 +742,12 @@ std::string parse_globals(const std::string_view text, Config& out) {
                 section = Section::keyboard;
             } else if (name == "media") {
                 section = Section::media;
+            } else if (name == "touch") {
+                section = Section::touch;
             } else if (name == "motion") {
                 section = Section::motion;
             } else if (name == "adb") {
                 section = Section::adb;
-            } else if (name.substr(0, 7) == "device.") {
-                // An older config kept its devices here, numbered.
-                int index = 0;
-                if (!to_int(name.substr(7), 1, 64, index))
-                    return "the device number must be 1 to 64";
-                if (config.devices.size() >= max_devices)
-                    return "there are more than " + std::to_string(max_devices) + " devices";
-                section = Section::legacy_device;
-                config.devices.emplace_back();
             } else {
                 return "unknown section [" + std::string(name) + "]";
             }
@@ -749,6 +762,8 @@ std::string parse_globals(const std::string_view text, Config& out) {
             case Section::keyboard:
                 return key == "enabled" && to_bool(value, config.keyboard);
             case Section::media:
+                if (key == "enabled")
+                    return to_bool(value, config.media);
                 if (key == "target")
                     return to_name(value == "active" ? std::string_view() : value,
                                    config.media_target);
@@ -757,12 +772,17 @@ std::string parse_globals(const std::string_view text, Config& out) {
                         return to_hotkey(value, config.media_hotkeys[index]);
                 }
                 return false;
+            case Section::touch: {
+                TouchPatch patch;
+                if (!set_touch_patch(patch, key, value))
+                    return false;
+                apply_touch(config.touch, patch);
+                return true;
+            }
             case Section::motion:
                 return set_global_motion(config, key, value);
             case Section::adb:
                 return set_adb(config, key, value);
-            case Section::legacy_device:
-                return set_legacy_device(config.devices.back(), key, value);
             }
             return false;
         });
@@ -782,6 +802,7 @@ std::string format_globals(const Config& c) {
     out.put("resync_hotkey", c.resync_hotkey);
 
     out.section("mouse");
+    out.put("enabled", yes_no(c.mouse));
     out.put("buttons", std::to_string(c.mouse_buttons));
     std::string map;
     for (const unsigned button : c.button_map)
@@ -792,9 +813,18 @@ std::string format_globals(const Config& c) {
     out.put("enabled", yes_no(c.keyboard));
 
     out.section("media");
+    out.put("enabled", yes_no(c.media));
     out.put("target", c.media_target.empty() ? "active" : c.media_target);
     for (size_t index = 0; index < media_key_count; ++index)
         out.put(media_keys[index].name, c.media_hotkeys[index]);
+
+    out.section("touch");
+    out.put("enabled", yes_no(c.touch.enabled));
+    out.put("scroll", std::to_string(c.touch.scroll));
+    out.put("scroll_pan", std::to_string(c.touch.scroll_pan));
+    out.put("scroll_release_ms", std::to_string(c.touch.release_ms));
+    out.put("scroll_start_ms", number(c.touch.start_ms));
+    out.put("tap_button", std::to_string(c.touch.button));
 
     out.section("motion");
     put_motion(out, c.motion);
@@ -809,7 +839,7 @@ std::string format_globals(const Config& c) {
 
 std::string parse_device(const std::string_view text, DeviceConfig& out) {
     DeviceConfig device;
-    enum class Section { device, placement, detected, motion, keyboard, adb };
+    enum class Section { device, placement, detected, motion, mouse, keyboard, media, touch, adb };
     Section section = Section::device;
     const auto set_optional = [](const std::string_view value, std::optional<bool>& slot) {
         bool parsed = false;
@@ -829,8 +859,14 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 section = Section::detected;
             else if (name == "motion")
                 section = Section::motion;
+            else if (name == "mouse")
+                section = Section::mouse;
             else if (name == "keyboard")
                 section = Section::keyboard;
+            else if (name == "media")
+                section = Section::media;
+            else if (name == "touch")
+                section = Section::touch;
             else if (name == "adb")
                 section = Section::adb;
             else
@@ -848,10 +884,6 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                     return to_bool(value, device.enabled);
                 if (key == "hotkey")
                     return to_hotkey(value, device.hotkey);
-                if (key == "accessory_fallback") {
-                    bool ignored = false;
-                    return to_bool(value, ignored);
-                }
                 return false;
             case Section::placement:
                 return set_placement(device, key, value);
@@ -859,19 +891,19 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                 return set_detected(device, key, value);
             case Section::motion:
                 return set_motion_patch(device.motion, key, value);
+            case Section::mouse:
+                return key == "enabled" && set_optional(value, device.mouse);
             case Section::keyboard:
                 return key == "enabled" && set_optional(value, device.keyboard);
+            case Section::media:
+                return key == "enabled" && set_optional(value, device.media);
+            case Section::touch:
+                return set_touch_patch(device.touch, key, value);
             case Section::adb:
                 if (key == "port")
                     return to_port(value, device.adb_port);
                 if (key == "proxy")
                     return to_bool(value, device.adb_proxy);
-                // The switches of the daemon's own use of adb, which it no
-                // longer has: read, and not written back.
-                if (key == "connect" || key == "tune" || key == "restore_accel") {
-                    bool ignored = false;
-                    return to_bool(value, ignored);
-                }
                 return false;
             }
             return false;
@@ -954,9 +986,33 @@ std::string format_device(const DeviceConfig& d) {
         if (p.report_rate)
             out.put("report_rate_hz", rate_text(p.report_rate->every, p.report_rate->hz));
     }
+    if (d.mouse) {
+        out.section("mouse");
+        out.put("enabled", yes_no(*d.mouse));
+    }
     if (d.keyboard) {
         out.section("keyboard");
         out.put("enabled", yes_no(*d.keyboard));
+    }
+    if (d.media) {
+        out.section("media");
+        out.put("enabled", yes_no(*d.media));
+    }
+    const TouchPatch& t = d.touch;
+    if (t.enabled || t.scroll || t.scroll_pan || t.release_ms || t.start_ms || t.button) {
+        out.section("touch");
+        if (t.enabled)
+            out.put("enabled", yes_no(*t.enabled));
+        if (t.scroll)
+            out.put("scroll", std::to_string(*t.scroll));
+        if (t.scroll_pan)
+            out.put("scroll_pan", std::to_string(*t.scroll_pan));
+        if (t.release_ms)
+            out.put("scroll_release_ms", std::to_string(*t.release_ms));
+        if (t.start_ms)
+            out.put("scroll_start_ms", number(*t.start_ms));
+        if (t.button)
+            out.put("tap_button", std::to_string(*t.button));
     }
     if (d.adb_proxy || d.adb_port != 0) {
         out.section("adb");

@@ -44,6 +44,9 @@ double take_whole(double value, double& fraction) noexcept {
 void Session::configure(const Portal& portal, const Size view, const int mount,
                         const MotionConfig& motion, const AccelModel& accel,
                         std::vector<Neighbour> neighbours, const bool has_pc) {
+    // A contact that is down keeps the raw position it was placed at; the new
+    // layout may turn the display, so it is lifted before anything changes.
+    lift_touch();
     portal_ = portal;
     view_ = view;
     mount_ = mount;
@@ -208,7 +211,20 @@ bool Session::motion(const double dx, const double dy, const double now) {
     before_.resize(ways);
     for (size_t way = 0; way < ways; ++way)
         before_[way] = distance(edge_of(way));
-    const GainRange gain = send(counts, now);
+    GainRange gain;
+    if (tap_down_) {
+        // Only the cursor's estimated place moves; the report waits for the lift.
+        const double seconds = last_send_ > 0.0 ? now - last_send_ : 0.0;
+        gain = accel_.range(std::hypot(counts.x, counts.y), seconds);
+        tracker_.sent(counts, gain);
+        publish();
+        held_ = {held_.x + counts.x, held_.y + counts.y};
+        held_at_ = now;
+        last_send_ = now;
+    } else {
+        gain = send(counts, now);
+    }
+    follow_tap();
 
     const double threshold = return_threshold();
     for (size_t way = 0; way < ways; ++way) {
@@ -242,17 +258,122 @@ bool Session::motion(const double dx, const double dy, const double now) {
     return false;
 }
 
+TouchPoint Session::raw_at(const double view_x, const double view_y) const noexcept {
+    return to_touch_point(touch_.natural, touch_.rotation, mount_, view_x, view_y);
+}
+
+void Session::set_touch(const TouchSetup& setup) {
+    lift_touch();
+    touch_ = setup;
+}
+
+void Session::tap(const bool down) {
+    if (down == tap_down_)
+        return;
+    tap_down_ = down;
+    tap_at_ = raw_at(tracker_.x().mid(), tracker_.y().mid());
+    if (down) {
+        held_ = {};
+        held_from_ = tracker_;
+    }
+    sink_.touch(0, tap_at_.x, tap_at_.y, down);
+    if (!down)
+        flush_held();
+}
+
+void Session::flush_held() {
+    if (held_.x == 0 && held_.y == 0)
+        return;
+    // The steps were estimated one by one; Android scales the report as one
+    // movement, so the tracker is set back and told about that report.
+    tracker_ = held_from_;
+    const Delta counts = held_;
+    held_ = {};
+    send(counts, held_at_);
+}
+
+void Session::follow_tap() {
+    if (!tap_down_)
+        return;
+    tap_at_ = raw_at(tracker_.x().mid(), tracker_.y().mid());
+    sink_.touch(0, tap_at_.x, tap_at_.y, true);
+}
+
+void Session::swipe(const double dx, const double dy) {
+    // Every notch is a swipe of its own: put down where the cursor is, moved
+    // by the notch and lifted. The finger stays on the display: a notch that
+    // would go past the edge is cut short, and one that cannot move at all is
+    // not started (a finger put down and lifted in place is a tap).
+    const double origin_x = tracker_.x().mid();
+    const double origin_y = tracker_.y().mid();
+    const double off_x = std::clamp(dx, -origin_x, view_.w - 1.0 - origin_x);
+    const double off_y = std::clamp(dy, -origin_y, view_.h - 1.0 - origin_y);
+    if (off_x == 0.0 && off_y == 0.0)
+        return;
+    // The one before it may still be down, waiting for its lift.
+    if (scroll_active_)
+        sink_.touch(1, scroll_at_.x, scroll_at_.y, false);
+    scroll_active_ = true;
+    scroll_at_ = raw_at(origin_x, origin_y);
+    sink_.touch_place(1, scroll_at_.x, scroll_at_.y, touch_.start_s);
+    scroll_at_ = raw_at(origin_x + off_x, origin_y + off_y);
+    sink_.touch_hold(1, scroll_at_.x, scroll_at_.y, touch_.release_s);
+}
+
+void Session::lift_touch() {
+    if (tap_down_) {
+        sink_.touch(0, tap_at_.x, tap_at_.y, false);
+        tap_down_ = false;
+        flush_held();
+    }
+    if (scroll_active_) {
+        sink_.touch(1, scroll_at_.x, scroll_at_.y, false);
+        scroll_active_ = false;
+    }
+}
+
 void Session::scroll(const double wheel, const double pan) {
     if (!remote_)
         return;
     const int w = static_cast<int>(take_whole(wheel * motion_.scroll_scale, fraction_wheel_));
     const int p = static_cast<int>(take_whole(pan * motion_.scroll_scale, fraction_pan_));
-    if (w != 0 || p != 0)
-        sink_.scroll(w, p);
+    if (!touch_.enabled) {
+        if (w != 0 || p != 0)
+            sink_.scroll(w, p);
+        return;
+    }
+    // The notches touch scroll takes; the rest stay a mouse wheel. A positive
+    // wheel scrolls the view up, so the content and the finger go down; a
+    // positive pan scrolls right, so the finger goes left. Both signs are
+    // confirmed on a device in Task 7.
+    int wheel_out = w;
+    int pan_out = p;
+    double dy = 0.0;
+    double dx = 0.0;
+    if (w != 0 && touch_.scroll != 0) {
+        dy = static_cast<double>(w) * touch_.scroll;
+        wheel_out = 0;
+    }
+    if (p != 0 && touch_.scroll_pan != 0) {
+        dx = -static_cast<double>(p) * touch_.scroll_pan;
+        pan_out = 0;
+    }
+    if (wheel_out != 0 || pan_out != 0)
+        sink_.scroll(wheel_out, pan_out);
+    if (wheel_out != w || pan_out != p)
+        swipe(dx, dy);
 }
 
 void Session::button(const unsigned button, const bool down) {
-    if (!remote_ || button < 1 || button > motion_.buttons || button > 32)
+    if (!remote_ || button < 1 || button > 32)
+        return;
+    // The tap button is the host's choice and need not be one the mouse Node
+    // declares.
+    if (touch_.enabled && button == touch_.button) {
+        tap(down);
+        return;
+    }
+    if (button > motion_.buttons)
         return;
     const uint32_t bit = uint32_t{1} << (button - 1);
     if (((buttons_ & bit) != 0) == down)
@@ -286,6 +407,7 @@ void Session::media(const uint16_t usage, const bool down) {
 }
 
 int Session::leave() {
+    lift_touch();
     for (size_t usage = 0; usage < keys_.size(); ++usage) {
         if (keys_[usage])
             sink_.key(static_cast<uint16_t>(usage), false);

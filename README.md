@@ -51,8 +51,8 @@ your mouse/keyboard ─▶ aoahid_share_daemon ─▶ USB (AOA 2.0 HID) ─▶ A
    build/out/aoahid_share_daemon &
    build/out/aoahid_share status
    ```
-   The daemon opens no device by itself. Plugged in devices appear as newly
-   detected. Run `aoahid_share connect <serial>` (or the Connect button in
+   The daemon scans for devices when it starts but opens none by itself.
+   Plugged in devices appear as newly detected. Run `aoahid_share connect <serial>` (or the Connect button in
    `aoahid_share_gui`) to give one a file and open it; a device that already has
    a file is opened the same way, by name or serial. Then turn its ADB proxy on
    and run `aoahid_share fill <serial>` to read its size and pointer speed, or
@@ -69,8 +69,8 @@ under the list connect or disconnect the one that is chosen (for the computer:
 disconnect every device, stop the daemon). Apply and Discard changes are at the
 bottom right. On the right each setting
 is a row, its name at the left and its control (a switch, a drop-down, a field)
-at the right edge. A device has the tabs Device (name, in use, keyboard, ADB
-proxy), Placement (drag it around your monitors, or say which side of what it
+at the right edge. A device has the tabs Device (name, in use, ADB proxy), HID
+(which of the mouse, keyboard, media keys and touchscreen it gets), Placement (drag it around your monitors, or say which side of what it
 sits on), Screen, Motion, Status (every key the daemon reports) and Tools; the
 computer has General, Motion (with the polling rate), ADB, Status and Tools.
 It only edits the config and talks to the daemon; closing it changes nothing.
@@ -118,7 +118,7 @@ acceleration is on, and writes them (and the gain they give) into the
 device's file. It does not close or reopen anything. Every value can also be
 typed in by hand; a value that is not set is said to be missing, never
 guessed. The only way the daemon touches adb's server is to stop it
-(`kill_server`, in `[adb]`): before each scan that was asked for, when it holds
+(`kill_server`, in `[adb]`): before each scan that was asked for (also the one at start), when it holds
 the ADB interface that a proxy is to take, and once more on exit if a proxy was
 served.
 

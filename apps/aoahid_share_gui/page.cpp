@@ -118,17 +118,21 @@ void draw_device_page(App& app, DeviceConfig& device) {
         draw_row(app, KeyScope::device, "touch", "enabled", &device, "Touch mode");
         draw_row(app, KeyScope::device, "touch", "tap_button", &device, "Tap button");
         draw_row(app, KeyScope::device, "touch", "swipe", &device, "Swipe with the wheel");
-        draw_row(app, KeyScope::device, "touch", "scroll", &device, "Swipe distance per notch");
-        draw_row(app, KeyScope::device, "touch", "scroll_pan", &device,
-                 "Swipe distance per notch, sideways");
-        draw_row(app, KeyScope::device, "touch", "scroll_start_ms", &device,
-                 "Swipe start delay (0 = next report)");
-        draw_row(app, KeyScope::device, "touch", "scroll_steps", &device, "Swipe steps per notch");
-        draw_row(app, KeyScope::device, "touch", "scroll_total_ms", &device,
-                 "Swipe time, first to last step");
-        draw_row(app, KeyScope::device, "touch", "scroll_overlap", &device, "Notch during a swipe");
-        draw_row(app, KeyScope::device, "touch", "scroll_release_ms", &device,
-                 "Swipe lift delay (0 = next report)");
+        if (touch_of(app.config, device).swipe) {
+            draw_row(app, KeyScope::device, "touch", "scroll", &device, "Swipe distance per notch");
+            draw_row(app, KeyScope::device, "touch", "scroll_pan", &device,
+                     "Swipe distance per notch, sideways");
+            draw_row(app, KeyScope::device, "touch", "scroll_start_ms", &device,
+                     "Swipe start delay (0 = next report)");
+            draw_row(app, KeyScope::device, "touch", "scroll_steps", &device,
+                     "Swipe steps per notch");
+            draw_row(app, KeyScope::device, "touch", "scroll_total_ms", &device,
+                     "Swipe time, first to last step");
+            draw_row(app, KeyScope::device, "touch", "scroll_overlap", &device,
+                     "Notch during a swipe");
+            draw_row(app, KeyScope::device, "touch", "scroll_release_ms", &device,
+                     "Swipe lift delay (0 = next report)");
+        }
         break;
     case 2:
         draw_placement(app, device);
@@ -164,19 +168,22 @@ void draw_computer_page(App& app) {
         draw_row(app, KeyScope::computer, "touch", "enabled", nullptr, "Touch mode");
         draw_row(app, KeyScope::computer, "touch", "tap_button", nullptr, "Tap button");
         draw_row(app, KeyScope::computer, "touch", "swipe", nullptr, "Swipe with the wheel");
-        draw_row(app, KeyScope::computer, "touch", "scroll", nullptr, "Swipe distance per notch");
-        draw_row(app, KeyScope::computer, "touch", "scroll_pan", nullptr,
-                 "Swipe distance per notch, sideways");
-        draw_row(app, KeyScope::computer, "touch", "scroll_start_ms", nullptr,
-                 "Swipe start delay (0 = next report)");
-        draw_row(app, KeyScope::computer, "touch", "scroll_steps", nullptr,
-                 "Swipe steps per notch");
-        draw_row(app, KeyScope::computer, "touch", "scroll_total_ms", nullptr,
-                 "Swipe time, first to last step");
-        draw_row(app, KeyScope::computer, "touch", "scroll_overlap", nullptr,
-                 "Notch during a swipe");
-        draw_row(app, KeyScope::computer, "touch", "scroll_release_ms", nullptr,
-                 "Swipe lift delay (0 = next report)");
+        if (app.config.touch.swipe) {
+            draw_row(app, KeyScope::computer, "touch", "scroll", nullptr,
+                     "Swipe distance per notch");
+            draw_row(app, KeyScope::computer, "touch", "scroll_pan", nullptr,
+                     "Swipe distance per notch, sideways");
+            draw_row(app, KeyScope::computer, "touch", "scroll_start_ms", nullptr,
+                     "Swipe start delay (0 = next report)");
+            draw_row(app, KeyScope::computer, "touch", "scroll_steps", nullptr,
+                     "Swipe steps per notch");
+            draw_row(app, KeyScope::computer, "touch", "scroll_total_ms", nullptr,
+                     "Swipe time, first to last step");
+            draw_row(app, KeyScope::computer, "touch", "scroll_overlap", nullptr,
+                     "Notch during a swipe");
+            draw_row(app, KeyScope::computer, "touch", "scroll_release_ms", nullptr,
+                     "Swipe lift delay (0 = next report)");
+        }
         look::heading("Media");
         draw_group(app, "Media", nullptr);
         break;

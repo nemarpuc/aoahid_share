@@ -55,7 +55,7 @@ constexpr ConfigKey table[] = {
     // [touch]
     {S::both, "touch", "enabled", "Touchscreen", K::boolean, "", "", "false",
      "The left click becomes a tap at the tracked position."},
-    {S::both, "touch", "swipe", "Touchscreen", K::boolean, "", "", "true",
+    {S::both, "touch", "swipe", "Touchscreen", K::boolean, "", "", "false",
      "Touchscreen swipe: the wheel swipes a second finger. Off leaves it a mouse wheel."},
     {S::both, "touch", "scroll", "Touchscreen", K::integer, "-2000..2000", "device px", "100",
      "Touchscreen swipe: how far a wheel notch moves the swiping finger up or down, in pixels "

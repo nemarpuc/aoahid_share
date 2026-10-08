@@ -163,6 +163,13 @@ bool set_touch_patch(TouchPatch& p, const std::string_view key, const std::strin
         p.enabled = on;
         return true;
     }
+    if (key == "swipe") {
+        bool on = false;
+        if (!to_bool(value, on))
+            return false;
+        p.swipe = on;
+        return true;
+    }
     if (key == "scroll" || key == "scroll_pan") {
         if (!to_int(value, -2000, 2000, number))
             return false;
@@ -212,6 +219,7 @@ bool set_touch_patch(TouchPatch& p, const std::string_view key, const std::strin
 
 void apply_touch(Touch& touch, const TouchPatch& p) noexcept {
     touch.enabled = p.enabled.value_or(touch.enabled);
+    touch.swipe = p.swipe.value_or(touch.swipe);
     touch.scroll = p.scroll.value_or(touch.scroll);
     touch.scroll_pan = p.scroll_pan.value_or(touch.scroll_pan);
     touch.release_ms = p.release_ms.value_or(touch.release_ms);
@@ -842,6 +850,7 @@ std::string format_globals(const Config& c) {
 
     out.section("touch");
     out.put("enabled", yes_no(c.touch.enabled));
+    out.put("swipe", yes_no(c.touch.swipe));
     out.put("scroll", std::to_string(c.touch.scroll));
     out.put("scroll_pan", std::to_string(c.touch.scroll_pan));
     out.put("scroll_release_ms", std::to_string(c.touch.release_ms));
@@ -1024,11 +1033,13 @@ std::string format_device(const DeviceConfig& d) {
         out.put("enabled", yes_no(*d.media));
     }
     const TouchPatch& t = d.touch;
-    if (t.enabled || t.scroll || t.scroll_pan || t.release_ms || t.start_ms || t.steps ||
+    if (t.enabled || t.swipe || t.scroll || t.scroll_pan || t.release_ms || t.start_ms || t.steps ||
         t.total_ms || t.restart || t.button) {
         out.section("touch");
         if (t.enabled)
             out.put("enabled", yes_no(*t.enabled));
+        if (t.swipe)
+            out.put("swipe", yes_no(*t.swipe));
         if (t.scroll)
             out.put("scroll", std::to_string(*t.scroll));
         if (t.scroll_pan)

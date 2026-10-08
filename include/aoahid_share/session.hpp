@@ -91,6 +91,8 @@ struct TouchSetup {
     int rotation{};
     // The mouse button that becomes a tap.
     unsigned button{1};
+    // The wheel swipes a finger; off leaves it a mouse wheel.
+    bool swipe{true};
     // Pixels a notch moves the finger on each axis; 0 leaves that wheel alone.
     int scroll{};
     int scroll_pan{};

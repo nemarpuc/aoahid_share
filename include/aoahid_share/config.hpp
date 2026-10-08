@@ -70,9 +70,11 @@ struct MotionPatch {
 // Touchscreen mode (docs/CONFIG.md, "[touch]").
 struct Touch {
     bool enabled{};
-    // Pixels a wheel notch moves the finger; 0 leaves the wheel a mouse wheel.
-    int scroll{};
-    int scroll_pan{};
+    // The wheel swipes a finger. Off leaves it a mouse wheel.
+    bool swipe{true};
+    // Pixels a wheel notch moves the finger; 0 leaves that wheel a mouse wheel.
+    int scroll{100};
+    int scroll_pan{100};
     // From the last notch to lifting the finger.
     int release_ms{200};
     // From the swiping finger being put down to its move.
@@ -88,6 +90,7 @@ struct Touch {
 
 struct TouchPatch {
     std::optional<bool> enabled;
+    std::optional<bool> swipe;
     std::optional<int> scroll;
     std::optional<int> scroll_pan;
     std::optional<int> release_ms;

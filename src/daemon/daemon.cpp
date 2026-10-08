@@ -926,6 +926,7 @@ void Daemon::relayout() {
         setup.natural = phone.natural;
         setup.rotation = phone.rotation;
         setup.button = touch.button;
+        setup.swipe = touch.swipe;
         setup.scroll = touch.scroll;
         setup.scroll_pan = touch.scroll_pan;
         setup.release_s = touch.release_ms / 1000.0;

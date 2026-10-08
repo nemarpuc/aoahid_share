@@ -8,10 +8,13 @@
   held drags. Needs the device's `width`, `height` and `rotation`; the
   position is converted for every rotation and mount (docs/MATH.md).
 - The wheel can swipe a second finger (`scroll`, `scroll_pan` in device pixels
-  per notch). Every notch is a swipe of its own: put down, moved after
-  `scroll_start_ms` (0 to 2000, fractions allowed, 0 is the next report) and
-  lifted `scroll_release_ms` after that (0 to 2000, 0 is the report after the
-  move).
+  per notch). Every notch is a swipe: put down where the cursor is, moved in
+  `scroll_steps` steps (the first `scroll_start_ms` after the finger is down,
+  the last `scroll_total_ms` after the first), and lifted `scroll_release_ms`
+  after the last step. Android takes a swipe split in steps for a scroll more
+  readily than a jump. A notch that comes while a swipe goes on is added to
+  what is left of it, or lifts that finger and starts again
+  (`scroll_overlap = add | restart`).
 - Android drops a touch when a mouse report arrives while it is down, so no
   mouse movement is sent while a finger is down: it is summed and sent in one
   report after the finger's lift. While the tap button is held the cursor

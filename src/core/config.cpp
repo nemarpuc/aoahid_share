@@ -182,6 +182,25 @@ bool set_touch_patch(TouchPatch& p, const std::string_view key, const std::strin
         p.start_ms = ms;
         return true;
     }
+    if (key == "scroll_steps") {
+        if (!to_int(value, 1, 64, number))
+            return false;
+        p.steps = number;
+        return true;
+    }
+    if (key == "scroll_total_ms") {
+        double ms = 0.0;
+        if (!to_double(value, 0.0, 2000.0, ms))
+            return false;
+        p.total_ms = ms;
+        return true;
+    }
+    if (key == "scroll_overlap") {
+        if (value != "add" && value != "restart")
+            return false;
+        p.restart = value == "restart";
+        return true;
+    }
     if (key == "tap_button") {
         if (!to_int(value, 1, 8, number))
             return false;
@@ -197,6 +216,9 @@ void apply_touch(Touch& touch, const TouchPatch& p) noexcept {
     touch.scroll_pan = p.scroll_pan.value_or(touch.scroll_pan);
     touch.release_ms = p.release_ms.value_or(touch.release_ms);
     touch.start_ms = p.start_ms.value_or(touch.start_ms);
+    touch.steps = p.steps.value_or(touch.steps);
+    touch.total_ms = p.total_ms.value_or(touch.total_ms);
+    touch.restart = p.restart.value_or(touch.restart);
     touch.button = p.button.value_or(touch.button);
 }
 
@@ -824,6 +846,9 @@ std::string format_globals(const Config& c) {
     out.put("scroll_pan", std::to_string(c.touch.scroll_pan));
     out.put("scroll_release_ms", std::to_string(c.touch.release_ms));
     out.put("scroll_start_ms", number(c.touch.start_ms));
+    out.put("scroll_steps", std::to_string(c.touch.steps));
+    out.put("scroll_total_ms", number(c.touch.total_ms));
+    out.put("scroll_overlap", c.touch.restart ? "restart" : "add");
     out.put("tap_button", std::to_string(c.touch.button));
 
     out.section("motion");
@@ -999,7 +1024,8 @@ std::string format_device(const DeviceConfig& d) {
         out.put("enabled", yes_no(*d.media));
     }
     const TouchPatch& t = d.touch;
-    if (t.enabled || t.scroll || t.scroll_pan || t.release_ms || t.start_ms || t.button) {
+    if (t.enabled || t.scroll || t.scroll_pan || t.release_ms || t.start_ms || t.steps ||
+        t.total_ms || t.restart || t.button) {
         out.section("touch");
         if (t.enabled)
             out.put("enabled", yes_no(*t.enabled));
@@ -1011,6 +1037,12 @@ std::string format_device(const DeviceConfig& d) {
             out.put("scroll_release_ms", std::to_string(*t.release_ms));
         if (t.start_ms)
             out.put("scroll_start_ms", number(*t.start_ms));
+        if (t.steps)
+            out.put("scroll_steps", std::to_string(*t.steps));
+        if (t.total_ms)
+            out.put("scroll_total_ms", number(*t.total_ms));
+        if (t.restart)
+            out.put("scroll_overlap", *t.restart ? "restart" : "add");
         if (t.button)
             out.put("tap_button", std::to_string(*t.button));
     }

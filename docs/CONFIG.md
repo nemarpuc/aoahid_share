@@ -102,6 +102,9 @@ there, and moving while it is held drags. It needs the device's `width`,
 | `scroll` | `0` | -2000 to 2000; pixels of the device's screen the finger moves, all at once, for each wheel notch (times `scroll_sensitivity`), from where the cursor is; `0` leaves the wheel a mouse wheel, a negative value reverses the direction |
 | `scroll_pan` | `0` | the same for the horizontal wheel |
 | `scroll_start_ms` | `1` | 0 to 2000, in milliseconds (fractions allowed, e.g. `0.25`); time from the swiping finger being put down to its move, for every notch; `0` moves it in the very next report |
+| `scroll_steps` | `4` | 1 to 64; the moves the distance of a notch is divided into (each is a touch report, at most one per polling period) |
+| `scroll_total_ms` | `8` | 0 to 2000, in milliseconds (fractions allowed); time from the first move to the last of a notch, so the gap between moves is this divided by `scroll_steps - 1` |
+| `scroll_overlap` | `add` | `add` or `restart`; a notch that comes while a swipe still goes on is added to what is left of it and the same finger goes on (`add`), or that finger is lifted and the notch starts again where the cursor is, losing what was left (`restart`) |
 | `scroll_release_ms` | `200` | 0 to 2000, in milliseconds; time from the finger's move to its lift, for every notch; `0` lifts it in the report after the move |
 
 **Why the cursor stands still during a drag.** When a touchscreen and a mouse
@@ -118,9 +121,12 @@ from.
 
 Two fingers are registered: the click uses the first, the scroll the second,
 so a scroll can go on while a button is held. Every wheel notch is a swipe of
-its own: the finger is put down where the cursor is, moved `scroll_start_ms`
-after that (so Android sees it down first), and lifted `scroll_release_ms`
-after the move; a notch that comes meanwhile lifts it first.
+its own: the finger is put down where the cursor is, the distance is moved in
+`scroll_steps` steps (the first `scroll_start_ms` after the finger is down, the
+last `scroll_total_ms` after the first), and the finger is lifted
+`scroll_release_ms` after the last step; Android takes a swipe split in steps
+for a scroll more readily than a jump. A notch that comes meanwhile is handled
+as `scroll_overlap` says; a notch that comes meanwhile lifts it first.
 While a finger is down no mouse report is sent (the same reason as for a
 drag above): movement that comes in meanwhile is summed and sent after the
 lift. How the position is turned into the touchscreen's own coordinates, for
@@ -253,7 +259,7 @@ this way takes no input for about 150 ms, while Android registers it.
 
 ### `[touch]` (device override)
 
-Any of `enabled`, `tap_button`, `scroll`, `scroll_pan`, `scroll_start_ms` and `scroll_release_ms`
+Any of `enabled`, `tap_button`, `scroll`, `scroll_pan`, `scroll_start_ms`, `scroll_steps`, `scroll_total_ms`, `scroll_overlap` and `scroll_release_ms`
 from the global `[touch]` section; a key the file leaves out follows config.ini.
 A running device has the touchscreen registered or removed on `reload`, as for
 the mouse, keyboard and media keys; a change of the device's `width` or

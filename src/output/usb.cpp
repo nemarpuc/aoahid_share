@@ -4,6 +4,7 @@
 #include <aoahid_adb_proxy.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <limits>
 
@@ -375,7 +376,7 @@ int Usb::open(const size_t index, const LinkOptions& options, std::string& error
         const std::lock_guard<std::mutex> lock(link.queue);
         link.motion = {};
         link.jumps.clear();
-        link.hold_until = {};
+        link.swipe = {};
         link.touch_queued_down = {};
         link.lift_owed = {};
         link.trace_until.store(0, std::memory_order_relaxed);
@@ -711,48 +712,66 @@ void Usb::LinkSink::touch(const unsigned contact, const int x, const int y, cons
     Link& link = usb_->links_[link_];
     {
         const std::lock_guard<std::mutex> lock(link.queue);
-        // A lift ends any wait to lift it.
-        if (!down)
-            link.hold_until[contact] = 0;
-        usb_->queue_touch_locked(link, contact, x, y, down, now_ns());
+        // A lift ends the swipe, where its finger is.
+        if (!down && contact == 1 && link.swipe.active) {
+            link.swipe.active = false;
+            usb_->queue_touch_locked(link, contact, static_cast<int>(std::lround(link.swipe.x)),
+                                     static_cast<int>(std::lround(link.swipe.y)), false, now_ns());
+        } else {
+            usb_->queue_touch_locked(link, contact, x, y, down, now_ns());
+        }
     }
     link.wake.notify_one();
 }
 
-void Usb::LinkSink::touch_place(const unsigned contact, const int x, const int y,
-                                const double gap_s) {
-    if (contact > 1)
-        return;
+void Usb::LinkSink::swipe(const SwipePlan& plan) {
     Link& link = usb_->links_[link_];
+    const auto seconds = [](const double value) {
+        return static_cast<int64_t>(std::max(value, 0.0) * 1e9);
+    };
+    const auto inside = [&](const double value, const int size) {
+        return std::clamp(value, 0.0, std::max(size - 1.0, 0.0));
+    };
     {
         const std::lock_guard<std::mutex> lock(link.queue);
-        usb_->queue_touch_locked(link, contact, x, y, true, now_ns(),
-                                 static_cast<int64_t>(gap_s * 1e9));
-    }
-    link.wake.notify_one();
-}
-
-void Usb::LinkSink::touch_hold(const unsigned contact, const int x, const int y,
-                               const double release_s) {
-    if (contact > 1)
-        return;
-    Link& link = usb_->links_[link_];
-    const int64_t at = now_ns();
-    {
-        const std::lock_guard<std::mutex> lock(link.queue);
-        link.hold_until[contact] = at + static_cast<int64_t>(release_s * 1e9);
-        link.hold_x[contact] = x;
-        link.hold_y[contact] = y;
-        usb_->queue_touch_locked(link, contact, x, y, true, at);
+        Link::Swipe& swipe = link.swipe;
+        const int64_t now = now_ns();
+        if (swipe.active && plan.restart) {
+            swipe.active = false;
+            usb_->queue_touch_locked(link, 1, static_cast<int>(std::lround(swipe.x)),
+                                     static_cast<int>(std::lround(swipe.y)), false, now);
+        }
+        swipe.area = plan.area;
+        if (!swipe.active) {
+            // Put down where the cursor is; the first move comes after the start time.
+            swipe.active = true;
+            swipe.x = plan.x;
+            swipe.y = plan.y;
+            swipe.to_x = inside(plan.x + plan.dx, plan.area.w);
+            swipe.to_y = inside(plan.y + plan.dy, plan.area.h);
+            swipe.next_at = now + seconds(plan.start_s);
+            usb_->queue_touch_locked(link, 1, plan.x, plan.y, true, now, 0);
+        } else {
+            // Same finger: what is left grows by the notch, and the moves go on at once.
+            swipe.to_x = inside(swipe.to_x + plan.dx, plan.area.w);
+            swipe.to_y = inside(swipe.to_y + plan.dy, plan.area.h);
+            swipe.next_at = now;
+        }
+        const int steps = std::max(plan.steps, 1);
+        swipe.steps_left = steps;
+        swipe.gap = steps > 1 ? seconds(plan.total_s) / (steps - 1) : 0;
+        swipe.release = seconds(plan.release_s);
+        swipe.lift_at = 0;
     }
     link.wake.notify_one();
 }
 
 void Usb::queue_touch_locked(Link& link, const unsigned contact, const int x, const int y,
                              const bool down, const int64_t at, const int64_t gap_ns) {
-    // Only a move merges with a move; the event that puts the contact down
-    // stays an event of its own, so the placement is sent before the move.
-    if (down && link.count != 0) {
+    // Only a move of the first contact merges with a move (a fast drag must
+    // not fill the queue); the event that puts a contact down stays an event
+    // of its own, so the placement is sent before the move.
+    if (down && contact == 0 && link.count != 0) {
         Event& last = link.events[(link.head + link.count - 1) % link.events.size()];
         if (last.kind == event_touch && last.code == contact && last.down && !last.placing) {
             last.x = x;
@@ -814,7 +833,7 @@ void Usb::run(Link& link) {
     // is down or a touch event is still queued, and goes out in a report
     // after the lift.
     const auto touching = [&] {
-        if (link.touch_queued_down[0] || link.touch_queued_down[1])
+        if (link.swipe.active || link.touch_queued_down[0] || link.touch_queued_down[1])
             return true;
         for (size_t waiting = 0; waiting < link.count; ++waiting) {
             if (link.events[(link.head + waiting) % link.events.size()].kind == event_touch)
@@ -827,19 +846,41 @@ void Usb::run(Link& link) {
     };
     for (;;) {
         for (;;) {
-            // A held contact whose time has come is lifted like any other edge.
+            // The swipe's moves and its lift go in on their times, like any
+            // other edge: one move per pass, so they are not summed.
             const int64_t now = now_ns();
             int64_t next = 0;
-            for (size_t contact = 0; contact < link.hold_until.size(); ++contact) {
-                int64_t& until = link.hold_until[contact];
-                if (until == 0)
-                    continue;
-                if (now >= until) {
-                    until = 0;
-                    queue_touch_locked(link, static_cast<unsigned>(contact), link.hold_x[contact],
-                                       link.hold_y[contact], false, now);
-                } else if (next == 0 || until < next) {
-                    next = until;
+            Link::Swipe& swipe = link.swipe;
+            if (swipe.active) {
+                const auto due = [&](const int64_t at) {
+                    if (next == 0 || at < next)
+                        next = at;
+                };
+                const auto at_finger = [&](const bool down) {
+                    queue_touch_locked(link, 1, static_cast<int>(std::lround(swipe.x)),
+                                       static_cast<int>(std::lround(swipe.y)), down, now);
+                };
+                if (swipe.steps_left > 0) {
+                    if (now >= swipe.next_at) {
+                        swipe.x += (swipe.to_x - swipe.x) / swipe.steps_left;
+                        swipe.y += (swipe.to_y - swipe.y) / swipe.steps_left;
+                        --swipe.steps_left;
+                        at_finger(true);
+                        if (swipe.steps_left > 0)
+                            swipe.next_at = now + swipe.gap;
+                        else
+                            swipe.lift_at = now + swipe.release;
+                    } else {
+                        due(swipe.next_at);
+                    }
+                }
+                if (swipe.steps_left == 0 && swipe.lift_at != 0) {
+                    if (now >= swipe.lift_at) {
+                        swipe.active = false;
+                        at_finger(false);
+                    } else {
+                        due(swipe.lift_at);
+                    }
                 }
             }
             // A lift that found the queue full goes in as soon as there is room.

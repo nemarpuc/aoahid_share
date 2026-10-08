@@ -70,16 +70,14 @@ struct FakeAndroid final : Sink {
         int x;
         int y;
         bool down;
-        bool hold;
     };
     std::vector<TouchCall> touches;
     std::vector<std::pair<int, int>> wheels;
     void touch(const unsigned contact, const int x, const int y, const bool down) override {
-        touches.push_back({contact, x, y, down, false});
+        touches.push_back({contact, x, y, down});
     }
-    void touch_hold(const unsigned contact, const int x, const int y, double) override {
-        touches.push_back({contact, x, y, true, true});
-    }
+    std::vector<SwipePlan> swipes;
+    void swipe(const SwipePlan& plan) override { swipes.push_back(plan); }
 
     // The cursor in view space, derived independently of to_device_delta().
     [[nodiscard]] double view_x() const {
@@ -889,11 +887,11 @@ TEST_CASE("every rotation and mount keeps the touch point on the device") {
                     CHECK((corners[a].x != corners[b].x || corners[a].y != corners[b].y));
             }
             // A point outside the view is clamped, never wrapped.
-            const TouchPoint far = to_touch_point(natural, rotation, mount, 1e6, -1e6);
-            CHECK(far.x >= 0);
-            CHECK(far.x <= natural.w - 1);
-            CHECK(far.y >= 0);
-            CHECK(far.y <= natural.h - 1);
+            const TouchPoint outside = to_touch_point(natural, rotation, mount, 1e6, -1e6);
+            CHECK(outside.x >= 0);
+            CHECK(outside.x <= natural.w - 1);
+            CHECK(outside.y >= 0);
+            CHECK(outside.y <= natural.h - 1);
         }
     }
 }
@@ -999,36 +997,54 @@ TEST_CASE("moving while the tap is held drags contact 0") {
     CHECK(rig.phone.touches[1].y == rig.here().y);
 }
 
-TEST_CASE("a wheel notch swipes contact 1 by the scroll value, independent of contact 0") {
+TEST_CASE("a wheel notch is a swipe of the second finger, independent of contact 0") {
     TouchRig rig;
     rig.session.button(1, true);
     rig.phone.touches.clear();
     const TouchPoint start = rig.here();
     rig.session.scroll(1.0, 0.0);
-    // The finger is first put down where the cursor is, then moved: a swipe,
-    // not a tap one notch away. A positive wheel scrolls the view up, so the
-    // content and the finger go down. The lift is the sink's, on a timer.
-    REQUIRE(rig.phone.touches.size() == 2);
-    CHECK(rig.phone.touches[0].contact == 1);
-    CHECK(rig.phone.touches[0].down);
-    CHECK_FALSE(rig.phone.touches[0].hold);
-    CHECK(rig.phone.touches[0].x == start.x);
-    CHECK(rig.phone.touches[0].y == start.y);
-    CHECK(rig.phone.touches[1].contact == 1);
-    CHECK(rig.phone.touches[1].hold);
-    CHECK(rig.phone.touches[1].x == start.x);
-    CHECK(rig.phone.touches[1].y == start.y + 100);
-    // Every notch is a swipe of its own: the one before is lifted, and the
-    // next starts again where the cursor is, not one notch further.
+    // A positive wheel scrolls the view up, so the content and the finger go
+    // down. The sink does the putting down, the moves and the lift.
+    REQUIRE(rig.phone.swipes.size() == 1);
+    const SwipePlan& plan = rig.phone.swipes[0];
+    CHECK(plan.x == start.x);
+    CHECK(plan.y == start.y);
+    CHECK(plan.dx == 0);
+    CHECK(plan.dy == 100);
+    CHECK(plan.area.w == rig.natural.w);
+    CHECK(plan.area.h == rig.natural.h);
+    CHECK(plan.steps == 4);
+    CHECK_FALSE(plan.restart);
+    // The next notch is another swipe from the cursor, not one notch further:
+    // adding to a swipe that goes on is the sink's.
     rig.session.scroll(1.0, 0.0);
-    REQUIRE(rig.phone.touches.size() == 5);
-    CHECK_FALSE(rig.phone.touches[2].down);
-    CHECK(rig.phone.touches[2].y == start.y + 100);
-    CHECK(rig.phone.touches[3].down);
-    CHECK(rig.phone.touches[3].y == start.y);
-    CHECK(rig.phone.touches[4].y == start.y + 100);
-    // The wheel was taken: no mouse wheel went out.
+    REQUIRE(rig.phone.swipes.size() == 2);
+    CHECK(rig.phone.swipes[1].y == start.y);
+    CHECK(rig.phone.swipes[1].dy == 100);
+    // The finger of the click was not touched, and the wheel was taken.
+    CHECK(rig.phone.touches.empty());
     CHECK(rig.phone.wheels.empty());
+}
+
+TEST_CASE("the swipe settings reach the sink") {
+    TouchRig rig;
+    TouchSetup setup;
+    setup.enabled = true;
+    setup.natural = rig.natural;
+    setup.scroll = 100;
+    setup.steps = 7;
+    setup.start_s = 0.002;
+    setup.total_s = 0.03;
+    setup.release_s = 0.0;
+    setup.restart = true;
+    rig.session.set_touch(setup);
+    rig.session.scroll(1.0, 0.0);
+    REQUIRE(rig.phone.swipes.size() == 1);
+    CHECK(rig.phone.swipes[0].steps == 7);
+    CHECK(rig.phone.swipes[0].start_s == 0.002);
+    CHECK(rig.phone.swipes[0].total_s == 0.03);
+    CHECK(rig.phone.swipes[0].release_s == 0.0);
+    CHECK(rig.phone.swipes[0].restart);
 }
 
 TEST_CASE("a notch that cannot move the finger does not tap") {
@@ -1038,10 +1054,10 @@ TEST_CASE("a notch that cannot move the finger does not tap") {
     rig.session.motion(0.0, -5000.0, 1.5);
     rig.phone.touches.clear();
     rig.session.scroll(-1.0, 0.0);
-    CHECK(rig.phone.touches.empty());
+    CHECK(rig.phone.swipes.empty());
     // The other way it moves.
     rig.session.scroll(1.0, 0.0);
-    CHECK_FALSE(rig.phone.touches.empty());
+    CHECK_FALSE(rig.phone.swipes.empty());
 }
 
 TEST_CASE("changing the touch setup lifts a contact that is down") {
@@ -1089,12 +1105,12 @@ TEST_CASE("a swipe stays on the display") {
     TouchRig rig;
     for (int notch = 0; notch < 100; ++notch)
         rig.session.scroll(-1.0, 1.0);
-    REQUIRE_FALSE(rig.phone.touches.empty());
-    for (const auto& call : rig.phone.touches) {
-        CHECK(call.x >= 0);
-        CHECK(call.x < rig.natural.w);
-        CHECK(call.y >= 0);
-        CHECK(call.y < rig.natural.h);
+    REQUIRE_FALSE(rig.phone.swipes.empty());
+    for (const auto& plan : rig.phone.swipes) {
+        CHECK(plan.x + plan.dx >= 0);
+        CHECK(plan.x + plan.dx < rig.natural.w);
+        CHECK(plan.y + plan.dy >= 0);
+        CHECK(plan.y + plan.dy < rig.natural.h);
     }
 }
 

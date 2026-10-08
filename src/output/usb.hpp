@@ -176,8 +176,7 @@ class Usb {
         void key(uint16_t usage, bool down) override;
         void media(uint16_t usage, bool down) override;
         void touch(unsigned contact, int x, int y, bool down) override;
-        void touch_hold(unsigned contact, int x, int y, double release_s) override;
-        void touch_place(unsigned contact, int x, int y, double gap_s) override;
+        void swipe(const SwipePlan& plan) override;
 
       private:
         Usb* usb_{};
@@ -223,11 +222,25 @@ class Usb {
         // Movements that each go out alone and in order, ahead of `motion`.
         std::deque<Motion> jumps;
         std::array<Event, 128> events{};
-        // Per touch contact: when a held contact is lifted (0: not held), and
-        // where.
-        std::array<int64_t, 2> hold_until{};
-        std::array<int32_t, 2> hold_x{};
-        std::array<int32_t, 2> hold_y{};
+        // The second finger's swipe that is going on, guarded by `queue`: the
+        // sender makes its moves and its lift on their times.
+        struct Swipe {
+            bool active{};
+            // Where the finger is and where it goes, in raw coordinates.
+            double x{};
+            double y{};
+            double to_x{};
+            double to_y{};
+            Size area{};
+            int steps_left{};
+            // Nanoseconds: the next move, the gap between moves, the wait
+            // from the last move to the lift, and when that lift is due.
+            int64_t next_at{};
+            int64_t gap{};
+            int64_t release{};
+            int64_t lift_at{};
+        };
+        Swipe swipe;
         // Per touch contact: whether its last queued event leaves it down,
         // and a lift that did not fit the full queue and is queued when there
         // is room (with where).

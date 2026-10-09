@@ -137,7 +137,8 @@ void device_buttons(App& app, DeviceConfig& device) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Media keys");
     for (const char* const key :
-         {"previous", "play_pause", "next", "brightness_down", "brightness_up"}) {
+         {"previous", "play_pause", "next", "volume_down", "volume_up", "brightness_down",
+          "brightness_up"}) {
         ImGui::SameLine();
         if (ImGui::Button(key))
             run(app, std::string("media ") + key + " " + device.serial);

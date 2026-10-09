@@ -44,7 +44,8 @@ struct MediaKey {
 };
 inline constexpr MediaKey media_keys[] = {
     {"previous", 0x00B6},      {"play_pause", 0x00CD},      {"next", 0x00B5},
-    {"brightness_up", 0x006F}, {"brightness_down", 0x0070},
+    {"brightness_up", 0x006F}, {"brightness_down", 0x0070}, {"volume_up", 0x00E9},
+    {"volume_down", 0x00EA},
 };
 inline constexpr size_t media_key_count = sizeof(media_keys) / sizeof(media_keys[0]);
 

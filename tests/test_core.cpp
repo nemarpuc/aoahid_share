@@ -718,6 +718,7 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
                        "switch = ctrl+alt+1\n"
                        "lock = ctrl+alt+l\n"
                        "play_pause = ctrl+alt+p\n"
+                       "volume_up = ctrl+alt+up\n"
                        "[adb]\n"
                        "port = 7000\n"
                        "proxy = true\n";
@@ -727,6 +728,12 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
     CHECK(device.keys.resync.empty());
     CHECK(device.keys.media[1] == "ctrl+alt+p");
     CHECK(device.keys.media[0].empty());
+    REQUIRE(media_key_count == 7);
+    CHECK(media_keys[5].name == "volume_up");
+    CHECK(media_keys[5].usage == 0x00E9);
+    CHECK(media_keys[6].name == "volume_down");
+    CHECK(media_keys[6].usage == 0x00EA);
+    CHECK(device.keys.media[5] == "ctrl+alt+up");
     // The 0.3.4 key is gone from what is written.
     CHECK(format_device(device).find("\nhotkey = ") == std::string::npos);
     DeviceConfig broken;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.6
+
+- Volume up and volume down join the media keys: `volume_up` and
+  `volume_down` in a device's `[keys]`, in `aoahid_share media`, and as
+  buttons in the device's Tools tab.
+
 ## 0.3.5
 
 - Shortcuts belong to each device. A device's file has a `[keys]` section:

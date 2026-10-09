@@ -118,6 +118,10 @@ constexpr ConfigKey table[] = {
      "Sends the brightness-up key to this device, wherever the input is."},
     {S::device, "keys", "brightness_down", "Media", K::hotkey, "", "", "",
      "Sends the brightness-down key to this device, wherever the input is."},
+    {S::device, "keys", "volume_up", "Media", K::hotkey, "", "", "",
+     "Sends the volume-up key to this device, wherever the input is."},
+    {S::device, "keys", "volume_down", "Media", K::hotkey, "", "", "",
+     "Sends the volume-down key to this device, wherever the input is."},
 
     // [detected]
     {S::device, "detected", "width", "Android screen", K::integer, "2..100000", "px", "",

@@ -1595,7 +1595,8 @@ std::string Daemon::command(const std::string& line) {
             words >> name;
             const std::string device = rest_of(words);
             const size_t target = device.empty() ? media_phone() : phone_named(device);
-            answer = "error=media previous|play_pause|next|brightness_up|brightness_down";
+            answer = "error=media previous|play_pause|next|brightness_up|brightness_down|"
+                     "volume_up|volume_down";
             for (const MediaKey& each : media_keys) {
                 if (name != each.name)
                     continue;

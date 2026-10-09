@@ -130,15 +130,9 @@ bool set_daemon(Config& c, const std::string_view key, const std::string_view va
         c.backend = value;
         return true;
     }
-    if (key == "toggle_hotkey")
-        return to_hotkey(value, c.toggle_hotkey);
-    if (key == "panic_hotkey")
-        return to_hotkey(value, c.panic_hotkey);
-    if (key == "pause_hotkey")
-        return to_hotkey(value, c.pause_hotkey);
-    if (key == "resync_hotkey")
-        return to_hotkey(value, c.resync_hotkey);
-    return false;
+    // Read and dropped: until 0.3.4 the hotkeys were here.
+    return key == "toggle_hotkey" || key == "panic_hotkey" || key == "pause_hotkey" ||
+           key == "resync_hotkey";
 }
 
 // "max", "every", or reports a second.
@@ -794,12 +788,12 @@ std::string parse_globals(const std::string_view text, Config& out) {
             case Section::media:
                 if (key == "enabled")
                     return to_bool(value, config.media);
+                // Read and dropped: until 0.3.4 the media hotkeys were here.
                 if (key == "target")
-                    return to_name(value == "active" ? std::string_view() : value,
-                                   config.media_target);
-                for (size_t index = 0; index < media_key_count; ++index) {
-                    if (key == media_keys[index].name)
-                        return to_hotkey(value, config.media_hotkeys[index]);
+                    return true;
+                for (const MediaKey& each : media_keys) {
+                    if (key == each.name)
+                        return true;
                 }
                 return false;
             case Section::touch: {
@@ -826,10 +820,6 @@ std::string format_globals(const Config& c) {
     Writer out;
     out.section("daemon");
     out.put("backend", c.backend);
-    out.put("toggle_hotkey", c.toggle_hotkey);
-    out.put("panic_hotkey", c.panic_hotkey);
-    out.put("pause_hotkey", c.pause_hotkey);
-    out.put("resync_hotkey", c.resync_hotkey);
 
     out.section("mouse");
     out.put("enabled", yes_no(c.mouse));
@@ -844,9 +834,6 @@ std::string format_globals(const Config& c) {
 
     out.section("media");
     out.put("enabled", yes_no(c.media));
-    out.put("target", c.media_target.empty() ? "active" : c.media_target);
-    for (size_t index = 0; index < media_key_count; ++index)
-        out.put(media_keys[index].name, c.media_hotkeys[index]);
 
     out.section("touch");
     out.put("enabled", yes_no(c.touch.enabled));
@@ -873,7 +860,18 @@ std::string format_globals(const Config& c) {
 
 std::string parse_device(const std::string_view text, DeviceConfig& out) {
     DeviceConfig device;
-    enum class Section { device, placement, detected, motion, mouse, keyboard, media, touch, adb };
+    enum class Section {
+        device,
+        keys,
+        placement,
+        detected,
+        motion,
+        mouse,
+        keyboard,
+        media,
+        touch,
+        adb
+    };
     Section section = Section::device;
     const auto set_optional = [](const std::string_view value, std::optional<bool>& slot) {
         bool parsed = false;
@@ -887,6 +885,8 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
         [&](const std::string_view name) -> std::string {
             if (name == "device")
                 section = Section::device;
+            else if (name == "keys")
+                section = Section::keys;
             else if (name == "placement")
                 section = Section::placement;
             else if (name == "detected")
@@ -916,8 +916,19 @@ std::string parse_device(const std::string_view text, DeviceConfig& out) {
                     return to_name(value, device.name);
                 if (key == "enabled")
                     return to_bool(value, device.enabled);
-                if (key == "hotkey")
-                    return to_hotkey(value, device.hotkey);
+                // Read and dropped: [keys] switch since 0.3.5.
+                return key == "hotkey";
+            case Section::keys:
+                if (key == "switch")
+                    return to_hotkey(value, device.keys.switch_key);
+                if (key == "lock")
+                    return to_hotkey(value, device.keys.lock);
+                if (key == "resync")
+                    return to_hotkey(value, device.keys.resync);
+                for (size_t index = 0; index < media_key_count; ++index) {
+                    if (key == media_keys[index].name)
+                        return to_hotkey(value, device.keys.media[index]);
+                }
                 return false;
             case Section::placement:
                 return set_placement(device, key, value);
@@ -961,7 +972,13 @@ std::string format_device(const DeviceConfig& d) {
     out.put("serial", d.serial);
     out.put("name", d.name);
     out.put("enabled", yes_no(d.enabled));
-    out.put("hotkey", d.hotkey);
+
+    out.section("keys");
+    out.put("switch", d.keys.switch_key);
+    out.put("lock", d.keys.lock);
+    out.put("resync", d.keys.resync);
+    for (size_t index = 0; index < media_key_count; ++index)
+        out.put(media_keys[index].name, d.keys.media[index]);
 
     out.section("placement");
     out.put("monitor", d.monitor);
@@ -1136,30 +1153,42 @@ std::string validate_config(const Config& config) {
         }
     }
 
-    // One key combination does one thing.
-    std::vector<std::pair<Hotkey, std::string>> keys;
-    const auto add = [&](const std::string& text, const std::string& what) -> std::string {
+    // One key combination does one thing. A device's switch and media keys
+    // work wherever the input is, so nothing may repeat them; its lock and
+    // resync keys act only while it has the input, so two devices may share
+    // them.
+    struct Taken {
+        Hotkey hotkey;
+        size_t device;
+        bool anywhere;
+        std::string what;
+    };
+    std::vector<Taken> taken;
+    const auto add = [&](const std::string& text, const size_t device, const bool anywhere,
+                         const std::string_view name) -> std::string {
         Hotkey hotkey;
         if (!parse_hotkey(text, hotkey) || !hotkey.set())
             return {};
-        for (const auto& [other, whose] : keys) {
-            if (other.usage == hotkey.usage && other.modifiers == hotkey.modifiers)
-                return text + " is the hotkey of both " + whose + " and " + what;
+        const std::string what = label_of(devices[device]) + "'s " + std::string(name);
+        for (const Taken& other : taken) {
+            if (other.hotkey.usage == hotkey.usage && other.hotkey.modifiers == hotkey.modifiers &&
+                (other.device == device || other.anywhere || anywhere))
+                return text + " is the key of both " + other.what + " and " + what;
         }
-        keys.emplace_back(hotkey, what);
+        taken.push_back({hotkey, device, anywhere, what});
         return {};
     };
-    std::string error = add(config.toggle_hotkey, "toggle");
-    if (error.empty())
-        error = add(config.panic_hotkey, "panic");
-    if (error.empty())
-        error = add(config.pause_hotkey, "pause");
-    if (error.empty())
-        error = add(config.resync_hotkey, "resync");
-    for (size_t index = 0; index < media_key_count && error.empty(); ++index)
-        error = add(config.media_hotkeys[index], std::string(media_keys[index].name));
-    for (size_t index = 0; index < devices.size() && error.empty(); ++index)
-        error = add(devices[index].hotkey, label_of(devices[index]));
+    std::string error;
+    for (size_t index = 0; index < devices.size() && error.empty(); ++index) {
+        const DeviceKeys& keys = devices[index].keys;
+        error = add(keys.switch_key, index, true, "switch");
+        for (size_t key = 0; key < media_key_count && error.empty(); ++key)
+            error = add(keys.media[key], index, true, media_keys[key].name);
+        if (error.empty())
+            error = add(keys.lock, index, false, "lock");
+        if (error.empty())
+            error = add(keys.resync, index, false, "resync");
+    }
     if (!error.empty())
         return error;
 

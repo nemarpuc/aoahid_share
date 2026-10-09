@@ -69,10 +69,10 @@ under the list connect or disconnect the one that is chosen (for the computer:
 disconnect every device, stop the daemon). Apply and Discard changes are at the
 bottom right. On the right each setting
 is a row, its name at the left and its control (a switch, a drop-down, a field)
-at the right edge. A device has the tabs Device (name, in use, ADB proxy), HID
+at the right edge. A device has the tabs Device (name, in use, ADB proxy), Keys (its shortcuts), HID
 (which of the mouse, keyboard, media keys and touchscreen it gets), Placement (drag it around your monitors, or say which side of what it
-sits on), Screen, Motion, Status (every key the daemon reports) and Tools; the
-computer has General, Motion (with the polling rate), ADB, Status and Tools.
+sits on), Screen, Motion, Tools, Status (every key the daemon reports) and Reports; the
+computer has General, HID, Motion (with the polling rate), ADB, Tools and Status.
 It only edits the config and talks to the daemon; closing it changes nothing.
 Nothing starts the daemon but you: run it yourself, or press its button in the
 window.
@@ -82,9 +82,12 @@ window.
 | | |
 | --- | --- |
 | Push the cursor back through the shared edge | returns to the computer |
-| `Ctrl+Alt+S` | toggles between the computer and the device |
-| `Ctrl+Alt+Shift+Esc` | always returns to the computer |
-| `aoahid_share release` | the same, from a terminal |
+| The device's `switch` key | to the device, and back when it has the input |
+| `aoahid_share release` | returns to the computer, from a terminal |
+
+Shortcuts are set per device, in its Keys tab, and none is set to start with:
+`switch` takes the input to the device and back, `lock` keeps it there (for a
+game that takes the mouse), and each media key can have one.
 
 If the device is unplugged or stops answering, the input returns on its own.
 

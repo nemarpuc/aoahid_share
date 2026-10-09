@@ -19,7 +19,7 @@ next one. aoahid_share is built to leave those alone.
 5. **Optional push.** `enter_push` makes the cursor cross only after pushing
    that many pixels against the edge, for a segment that overlaps a desktop
    feature. Not available on `portal`.
-6. **Pause.** `aoahid_share pause` (or a hotkey) stops crossing until
+6. **Pause.** `aoahid_share pause` stops crossing until
    `resume`.
 
 ## While the input is on the device

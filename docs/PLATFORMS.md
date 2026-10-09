@@ -24,9 +24,9 @@ in logical pixels or mm, depending on the device type", `ei_event_pointer_get_dx
 in `libei.h`; `windows`, `macos`) therefore feel different at the same
 sensitivity, as they would for a USB mouse plugged into the device.
 
-Where the hotkey is not seen on the PC side, the input moves to the device by
+Where a device's `switch` key is not seen on the PC side, the input moves to the device by
 crossing the edge, or by binding `aoahid_share enter` to a key in the desktop's
-own shortcut settings. The hotkeys always work while the input is on the device.
+own shortcut settings. A device's keys always work while the input is on the device.
 
 Automatic choice on Linux: with `WAYLAND_DISPLAY`, `portal` then `layer_shell`;
 with only `DISPLAY`, `x11`; with neither, `evdev`.
@@ -65,7 +65,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
   asks for the segment; when that is refused it asks for the whole edge and
   hands the cursor straight back when it crosses outside the segment.
 - The compositor decides when a capture starts, so `aoahid_share enter` and
-  the toggle hotkey cannot start one; `enter_push` has no effect either.
+  a `switch` key cannot start one; `enter_push` has no effect either.
 - Which keys the compositor keeps for itself during a capture has not been
   examined.
 
@@ -86,7 +86,7 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
 - Reads `/dev/input/event*` and needs read access to them, usually membership
   of the `input` group. That lets the daemon read every key typed on the
   machine; it is never chosen automatically inside a desktop session.
-- It cannot see the cursor, so there is no edge: use the hotkey or
+- It cannot see the cursor, so there is no edge: use the device's `switch` key or
   `aoahid_share enter`.
 - The devices are taken only at a moment when no key is down, and nothing is
   forwarded before that.

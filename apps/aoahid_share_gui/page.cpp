@@ -21,9 +21,9 @@ using namespace aoas;
 namespace gui {
 namespace {
 
-constexpr const char* const computer_tabs[] = {"General", "Motion", "ADB", "Status", "Tools"};
-constexpr const char* const device_tabs[] = {"Device", "HID",    "Placement", "Screen",
-                                             "Motion", "Status", "Reports",   "Tools"};
+constexpr const char* const computer_tabs[] = {"General", "HID", "Motion", "ADB", "Tools", "Status"};
+constexpr const char* const device_tabs[] = {"Device", "Keys",  "HID",    "Placement", "Screen",
+                                             "Motion", "Tools", "Status", "Reports"};
 
 // Every row of a heading of the tables that belongs on this page.
 void draw_group(App& app, const char* const group, DeviceConfig* const device) {
@@ -101,12 +101,18 @@ void draw_device_page(App& app, DeviceConfig& device) {
         draw_row(app, KeyScope::device, "device", "serial", &device, "Serial number");
         draw_row(app, KeyScope::device, "device", "name", &device, "Name");
         draw_row(app, KeyScope::device, "device", "enabled", &device, "In use");
-        draw_row(app, KeyScope::device, "device", "hotkey", &device, "Hotkey to this device");
         draw_row(app, KeyScope::device, "adb", "proxy", &device, "ADB proxy");
         draw_row(app, KeyScope::device, "adb", "port", &device, "ADB proxy port");
         draw_proxy_command(app, device);
         break;
     case 1:
+        look::dim("Switch and the media keys work wherever the input is; lock and resync while "
+                  "it is on this device.");
+        draw_group(app, "Keys", &device);
+        look::heading("Media");
+        draw_group(app, "Media", &device);
+        break;
+    case 2:
         draw_row(app, KeyScope::device, "mouse", "enabled", &device, "Mouse");
         draw_row(app, KeyScope::device, "keyboard", "enabled", &device, "Keyboard");
         draw_row(app, KeyScope::device, "media", "enabled", &device, "Media keys");
@@ -134,23 +140,23 @@ void draw_device_page(App& app, DeviceConfig& device) {
                      "Swipe lift delay (0 = next report)");
         }
         break;
-    case 2:
+    case 3:
         draw_placement(app, device);
         break;
-    case 3:
+    case 4:
         draw_device_screen(app, device);
         break;
-    case 4:
+    case 5:
         draw_group(app, "Motion", &device);
         break;
-    case 5:
+    case 6:
+        draw_device_tools(app, device);
+        break;
+    case 7:
         draw_status(app, &device);
         break;
-    case 6:
-        draw_reports(app, device);
-        break;
     default:
-        draw_device_tools(app, device);
+        draw_reports(app, device);
         break;
     }
 }
@@ -161,6 +167,9 @@ void draw_computer_page(App& app) {
         draw_group(app, "General", nullptr);
         draw_row(app, KeyScope::computer, "mouse", "buttons", nullptr, "Mouse buttons");
         draw_row(app, KeyScope::computer, "mouse", "button_map", nullptr, "Button map");
+        break;
+    case 1:
+        look::dim("What a device gets unless its own HID tab says otherwise.");
         draw_row(app, KeyScope::computer, "mouse", "enabled", nullptr, "Mouse");
         draw_row(app, KeyScope::computer, "keyboard", "enabled", nullptr, "Keyboard");
         draw_row(app, KeyScope::computer, "media", "enabled", nullptr, "Media keys");
@@ -184,24 +193,22 @@ void draw_computer_page(App& app) {
             draw_row(app, KeyScope::computer, "touch", "scroll_release_ms", nullptr,
                      "Swipe lift delay (0 = next report)");
         }
-        look::heading("Media");
-        draw_group(app, "Media", nullptr);
-        break;
-    case 1:
-        draw_group(app, "Motion", nullptr);
         break;
     case 2:
+        draw_group(app, "Motion", nullptr);
+        break;
+    case 3:
         draw_row(app, KeyScope::computer, "adb", "kill_server", nullptr,
                  "Stop a running adb server");
         draw_row(app, KeyScope::computer, "adb", "path", nullptr, "The adb program");
         draw_row(app, KeyScope::computer, "adb", "first_port", nullptr, "First proxy port");
         break;
-    case 3:
-        draw_status(app, nullptr);
-        break;
-    default:
+    case 4:
         draw_actions(app);
         draw_files(app);
+        break;
+    default:
+        draw_status(app, nullptr);
         break;
     }
 }

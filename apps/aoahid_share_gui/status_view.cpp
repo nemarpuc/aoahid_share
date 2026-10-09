@@ -12,6 +12,7 @@
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -113,6 +114,10 @@ void draw_summary(App& app, const aoas::DeviceConfig* device) {
                 : state == "error" ? "not ready"
                                    : "not connected");
     if (state == "ready") {
+        if (status_of(app, *device, "locked") == "yes") {
+            ImGui::SameLine();
+            ImGui::TextUnformatted("locked");
+        }
         ImGui::SameLine();
         look::dim((status_of(app, *device, "mode") + " tracking, " +
                    status_of(app, *device, "gain") + " px per count")
@@ -159,10 +164,21 @@ void draw_status(App& app, const aoas::DeviceConfig* device) {
         look::dim("the daemon reports nothing for this yet");
         return;
     }
+    // What is wrong comes first.
+    for (const std::string_view key : {"config_error", "capture_error", "status", "fill"}) {
+        const auto found = app.status.find(prefix + std::string(key));
+        if (found == app.status.end() || found->second.empty())
+            continue;
+        if (key == "fill" && found->second.rfind("error", 0) != 0)
+            continue;
+        if (key == "status" && found->second == "not connected")
+            continue;
+        ImGui::TextWrapped("ERR: %s", found->second.c_str());
+    }
     look::dim("Click a value to copy it.");
 
-    static const char* const order[] = {"Device", "Link",  "Timing", "Position",
-                                        "Host",   "Files", "Other"};
+    static const char* const order[] = {"Device", "Position", "Link", "Timing",
+                                        "Host",   "Files",    "Other"};
     for (const char* const group : order) {
         const auto found = by_group.find(group);
         if (found == by_group.end())
@@ -190,11 +206,13 @@ void draw_status(App& app, const aoas::DeviceConfig* device) {
             }
             ImGui::EndTable();
         }
+        if (std::string_view(group) == "Timing") {
+            if (!queue.empty())
+                draw_delay_bars("Input to the start of its USB call", queue);
+            if (!total.empty())
+                draw_delay_bars("Input to the report's completion", total);
+        }
     }
-    if (!queue.empty())
-        draw_delay_bars("Input to the start of its USB call", queue);
-    if (!total.empty())
-        draw_delay_bars("Input to the report's completion", total);
 }
 
 void draw_reports(App& app, const aoas::DeviceConfig& device) {

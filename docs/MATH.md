@@ -271,6 +271,10 @@ return when push >= return_push
 certainly-clamped movement counts, an uncertain gain can delay the return but
 never causes it early.
 
+While a device is locked (its `lock` key) no push is counted and nothing
+returns, toward the PC or toward a device beside it. The range still follows
+the clamp, so the position stays known.
+
 The PC cursor is put at `t` of the range's midpoint, one pixel inside the
 edge, and that midpoint is kept as `y_last`.
 

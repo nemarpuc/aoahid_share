@@ -38,15 +38,8 @@ is unanswered, for instance) the daemon keeps running, `status` shows
 | Key | Default | |
 | --- | --- | --- |
 | `backend` | `auto` | `auto`, `x11`, `portal`, `layer_shell`, `evdev`, `windows`, `macos` |
-| `toggle_hotkey` | `ctrl+alt+s` | move the input to the last used device and back |
-| `panic_hotkey` | `ctrl+alt+shift+escape` | always back to the computer |
-| `pause_hotkey` | empty | stop and restart crossing |
-| `resync_hotkey` | empty | take the corner reference on the next crossing |
 
-A hotkey is modifiers (`ctrl`, `shift`, `alt`, `meta`) and one key: a letter, a
-digit, `f1`..`f24`, `escape`, `space`, `tab`, `enter`, `backspace`, `insert`,
-`delete`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`,
-`pause`, `scrolllock`. Empty turns it off.
+The shortcuts are each device's own: see [`[keys]`](#keys).
 
 ## `[mouse]` and `[keyboard]`
 
@@ -59,28 +52,11 @@ digit, `f1`..`f24`, `escape`, `space`, `tab`, `enter`, `backspace`, `insert`,
 
 ## `[media]`
 
-A hotkey per media key, empty for none: `previous`, `play_pause`, `next`,
-`brightness_up`, `brightness_down`. The settings window has a button for
-each under Actions on the Computer page (Tools tab).
-
 `enabled = false` does not register the media keys on the device (default
 `true`; it does not follow `[keyboard] enabled`).
 
-`target` chooses which device receives media keys: a serial or name targets
-that device wherever the input is. Empty (or `active`) sends to the device
-that has the input, else the last used device or the first connected one.
-
-```ini
-[media]
-target = Galaxy Tab S11
-play_pause = ctrl+alt+p
-next = ctrl+alt+right
-```
-
-A media hotkey works wherever the input is. On a backend that
-cannot see the keyboard while the input is on the PC (`local_hotkeys=no` in
-`status`: `portal`, `layer_shell`), bind a desktop shortcut to
-`aoahid_share media play_pause` instead.
+A shortcut for a media key is set per device, in its [`[keys]`](#keys). The
+settings window has a button for each key in the device's Tools tab.
 
 The keyboard's own volume and media keys need no setting. While the input is
 on a device they go to that device and the computer does not act on them,
@@ -197,7 +173,47 @@ reads as not set).
 | `serial` | empty | USB serial number; a profile that names none is filed as `unassigned N.ini` until a device takes it |
 | `name` | empty | display name, at most 48 bytes, without `=`, `;`, `#`; it may not be another device's serial |
 | `enabled` | `true` | `false` keeps the device configured but left alone |
-| `hotkey` | empty | takes the input straight to this device |
+
+### `[keys]`
+
+The device's own shortcuts, all empty (none) to start with.
+
+| Key | Works | |
+| --- | --- | --- |
+| `switch` | anywhere | takes the input to this device, and back to the computer when it has it |
+| `lock` | while the input is on this device | keeps the input here whatever edge the cursor reaches, also toward a device beside it; press again to let go |
+| `resync` | while the input is on this device | its next entry takes the corner reference |
+| `previous`, `play_pause`, `next`, `brightness_up`, `brightness_down` | anywhere | sends that media key to this device |
+
+A key is modifiers (`ctrl`, `shift`, `alt`, `meta`) and one key: a letter, a
+digit, `f1`..`f24`, `escape`, `space`, `tab`, `enter`, `backspace`, `insert`,
+`delete`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`,
+`pause`, `scrolllock`. Empty turns it off.
+
+```ini
+[keys]
+switch = ctrl+alt+1
+lock = ctrl+alt+l
+play_pause = ctrl+alt+p
+```
+
+A `switch` or media key may not be any other key of any device. `lock` and
+`resync` may be the same on every device: they act on the one that has the
+input.
+
+The lock is for a game that takes the mouse: no edge sends the input back.
+It ends with the lock key, a `switch` key, `aoahid_share release` or `pause`,
+or when the input is taken back for another reason: the device is closed, or
+another device or a monitor comes or goes. It is not kept: a device starts
+unlocked.
+
+"Anywhere" needs a backend that sees the keyboard while the input is on the
+computer (`local_hotkeys=yes` in `status`). On `portal` and `layer_shell` these
+keys work only while the input is on a device; bind a desktop shortcut to
+`aoahid_share enter NAME` or `aoahid_share media play_pause NAME` instead.
+
+Until 0.3.4 the hotkeys were in `config.ini` and in the `[device]` section.
+Those keys are still read, and dropped: set the keys again here.
 
 ### `[placement]`
 
@@ -284,6 +300,7 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `name`, `state`, `status`, `fill`, `reading` | what it is called; `ready`, `error` or `absent`; why it is not ready; the last "fill"; a fill is under way |
 | `serial`, `proxy` | its serial; the proxy port or `off` |
 | `wanted`, `plugged` | `yes` when `connect` was asked for it and has not been undone; `yes` when the last scan saw it plugged in |
+| `locked` | `yes` while its lock key holds the input on it; only for a device that is open |
 | `size`, `rotation`, `density` | the values in use: pixels, degrees, Android pixels per millimetre |
 | `mode`, `gain` | `exact` or `curve`; pixels per count at low speed |
 | `segment`, `beside` | monitor, side, crossing span, device span (PC pixels) |
@@ -294,7 +311,7 @@ the daemon keeps, so asking never holds up the input. Per device the keys are
 | `realtime` | whether the sender thread got a real-time priority (needs `RLIMIT_RTPRIO`) |
 
 Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
-`paused`, `starting`), `active`, `last_used`, `backend`, `media_target`,
+`paused`, `starting`), `active`, `last_used`, `backend`,
 `local_hotkeys`, `monitor.N`, `new.<serial>`, `config_error`, `capture_error`,
 `files_version`.
 
@@ -316,7 +333,7 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 | `resync` | re-reference the corner reference on the next crossing |
 | `rescan` | look for devices now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |
-| `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`) |
+| `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`); without a device it goes to the one that has the input, else the last one used |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |
 | `probe SERIAL\|NAME move DX DY` | move the cursor by raw counts, up to 30000 |
 | `reports SERIAL\|NAME` | `ok`, then what the last reports to that device carried, one line each: `N MS REPORT TEXT` (the line's number, the clock in milliseconds, the report it went out in, and the call: mouse move/scroll/button, key, media, touch contact down/move/lift with its raw position). Recorded only for a few seconds after each ask |

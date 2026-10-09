@@ -175,6 +175,11 @@ class Session {
     // The next entry takes the corner reference.
     void resync() noexcept { known_ = false; }
 
+    // Locked, the cursor stays on this display whatever edge it reaches:
+    // motion() never returns true. leave() unlocks.
+    void set_locked(bool locked) noexcept { locked_ = locked; }
+    [[nodiscard]] bool locked() const noexcept { return locked_; }
+
   private:
     GainRange send(Delta view_counts, double now, bool alone = false);
     void publish() const noexcept {
@@ -207,6 +212,7 @@ class Session {
 
     bool remote_{};
     bool known_{};
+    bool locked_{};
     double entry_push_{};
     double last_hit_{};
     // Certainly-clamped push toward the PC (first) and toward each

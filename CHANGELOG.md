@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- CI and release builds link libaoahid 4.2.0 (was 4.1.0). The `find_package`
+  minimum (4.0.0) is unchanged.
+
 ## 0.3.3
 
 - `scroll_overlap` starts as `restart`: every wheel notch is a swipe of its own

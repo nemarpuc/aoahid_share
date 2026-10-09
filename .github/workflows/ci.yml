@@ -18,7 +18,7 @@ concurrency:
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
   # Changing the tag means changing the hashes in the matrix below too.
-  AOAHID_TAG: v4.1.0
+  AOAHID_TAG: v4.2.0
 
 jobs:
   build:

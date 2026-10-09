@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.4
 
 - CI and release builds link libaoahid 4.2.0 (was 4.1.0). The `find_package`
   minimum (4.0.0) is unchanged.
+- The vendored aoahid_adb_proxy is 3.2.1 (only its header's version macros
+  differ from 3.2.0).
 
 ## 0.3.3
 

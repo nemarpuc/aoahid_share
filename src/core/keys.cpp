@@ -14,14 +14,6 @@ constexpr ConfigKey table[] = {
     {S::computer, "daemon", "backend", "General", K::choice,
      "auto|x11|portal|layer_shell|evdev|windows|macos", "", "auto",
      "How input is captured; auto picks the one this desktop can use."},
-    {S::computer, "daemon", "toggle_hotkey", "General", K::hotkey, "", "", "ctrl+alt+s",
-     "Moves the input to the last used device and back."},
-    {S::computer, "daemon", "panic_hotkey", "General", K::hotkey, "", "", "ctrl+alt+shift+escape",
-     "Always brings the input back to this computer."},
-    {S::computer, "daemon", "pause_hotkey", "General", K::hotkey, "", "", "",
-     "Stops and restarts crossing; empty turns it off."},
-    {S::computer, "daemon", "resync_hotkey", "General", K::hotkey, "", "", "",
-     "Takes the corner reference on the next crossing; empty turns it off."},
 
     // [mouse] and [keyboard]
     {S::both, "mouse", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
@@ -38,19 +30,6 @@ constexpr ConfigKey table[] = {
     // [media]
     {S::both, "media", "enabled", "Mouse and keyboard", K::boolean, "", "", "true",
      "false does not register the media keys on the device."},
-    {S::computer, "media", "target", "Media", K::text, "", "", "active",
-     "The device that receives media keys, by name or serial; active means the one that has the "
-     "input."},
-    {S::computer, "media", "previous", "Media", K::hotkey, "", "", "",
-     "Hotkey for the previous-track key; empty turns it off."},
-    {S::computer, "media", "play_pause", "Media", K::hotkey, "", "", "",
-     "Hotkey for the play/pause key; empty turns it off."},
-    {S::computer, "media", "next", "Media", K::hotkey, "", "", "",
-     "Hotkey for the next-track key; empty turns it off."},
-    {S::computer, "media", "brightness_up", "Media", K::hotkey, "", "", "",
-     "Hotkey for the brightness-up key; empty turns it off."},
-    {S::computer, "media", "brightness_down", "Media", K::hotkey, "", "", "",
-     "Hotkey for the brightness-down key; empty turns it off."},
 
     // [touch]
     {S::both, "touch", "enabled", "Touchscreen", K::boolean, "", "", "false",
@@ -120,8 +99,25 @@ constexpr ConfigKey table[] = {
      "Display name, at most 48 bytes, without = ; #."},
     {S::device, "device", "enabled", "Device", K::boolean, "", "", "true",
      "false keeps the device configured but left alone."},
-    {S::device, "device", "hotkey", "Device", K::hotkey, "", "", "",
-     "Takes the input straight to this device."},
+
+    // device file [keys]
+    {S::device, "keys", "switch", "Keys", K::hotkey, "", "", "",
+     "Takes the input to this device, and back to the computer when it has it."},
+    {S::device, "keys", "lock", "Keys", K::hotkey, "", "", "",
+     "While the input is on this device: keeps it here whatever edge the cursor reaches; again "
+     "to let go."},
+    {S::device, "keys", "resync", "Keys", K::hotkey, "", "", "",
+     "While the input is on this device: its next entry takes the corner reference."},
+    {S::device, "keys", "previous", "Media", K::hotkey, "", "", "",
+     "Sends the previous-track key to this device, wherever the input is."},
+    {S::device, "keys", "play_pause", "Media", K::hotkey, "", "", "",
+     "Sends the play/pause key to this device, wherever the input is."},
+    {S::device, "keys", "next", "Media", K::hotkey, "", "", "",
+     "Sends the next-track key to this device, wherever the input is."},
+    {S::device, "keys", "brightness_up", "Media", K::hotkey, "", "", "",
+     "Sends the brightness-up key to this device, wherever the input is."},
+    {S::device, "keys", "brightness_down", "Media", K::hotkey, "", "", "",
+     "Sends the brightness-down key to this device, wherever the input is."},
 
     // [detected]
     {S::device, "detected", "width", "Android screen", K::integer, "2..100000", "px", "",
@@ -179,7 +175,6 @@ constexpr StatusKey status_table[] = {
     {false, "active", "Host", "", "", "The serial of the device that has the input."},
     {false, "backend", "Host", "", "", "The capture backend in use."},
     {false, "last_used", "Host", "", "", "The device that had the input last."},
-    {false, "media_target", "Host", "", "", "The device media keys go to, as configured."},
     {false, "config_error", "Host", "", "",
      "Why the configuration could not be read; the daemon keeps the last good one."},
     {false, "capture_error", "Host", "", "",
@@ -201,6 +196,7 @@ constexpr StatusKey status_table[] = {
     {true, "wanted", "Device", "", "",
      "yes when connect was asked for it and has not been undone."},
     {true, "plugged", "Device", "", "", "yes when the last scan saw it plugged in."},
+    {true, "locked", "Device", "", "", "yes while its lock key holds the input on it."},
     {true, "serial", "Device", "", "", "Its serial."},
     {true, "proxy", "Device", "", "", "The ADB proxy port, or off."},
     {true, "size", "Device", "px", "", "The screen size in use (width x height)."},

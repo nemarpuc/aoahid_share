@@ -101,6 +101,18 @@ struct TouchPatch {
     std::optional<unsigned> button;
 };
 
+// A device's own shortcuts ([keys] in its file); empty for none.
+struct DeviceKeys {
+    // To this device, and back to the computer when it has the input.
+    std::string switch_key;
+    // While this device has the input: keep it here; again to let go.
+    std::string lock;
+    // While this device has the input: its next entry takes the corner.
+    std::string resync;
+    // One per entry of media_keys: sends that key to this device.
+    std::array<std::string, media_key_count> media;
+};
+
 // One device, identified by its USB serial: one file under device/. A value
 // the file does not give is stored as its "unset" value here (-1 for the
 // integers, 0 for the sizes); the daemon then says what is missing and does
@@ -113,8 +125,7 @@ struct DeviceConfig {
     std::string name;
     // False: connected or not, it is left alone.
     bool enabled{true};
-    // Moves the input straight to this device.
-    std::string hotkey;
+    DeviceKeys keys;
 
     // Where it sits: on a side of a monitor (empty: the first), or of
     // another device, named by its serial.
@@ -157,10 +168,6 @@ struct DeviceConfig {
 
 struct Config {
     std::string backend{"auto"};
-    std::string toggle_hotkey{"ctrl+alt+s"};
-    std::string panic_hotkey{"ctrl+alt+shift+escape"};
-    std::string pause_hotkey;
-    std::string resync_hotkey;
 
     unsigned mouse_buttons{5};
     // HID button for PC button 1, 2, ...; empty keeps them in order.
@@ -169,11 +176,6 @@ struct Config {
     bool keyboard{true};
     bool media{true};
     Touch touch;
-    // A hotkey per entry of media_keys, empty for none.
-    std::array<std::string, media_key_count> media_hotkeys;
-    // The device media keys go to, by name or serial. Empty: the one that
-    // has the input, or else the one that had it last.
-    std::string media_target;
 
     Motion motion;
     // 0 sends each report as soon as the previous one completes.
@@ -219,7 +221,7 @@ struct Config {
 [[nodiscard]] std::string format_config(const Config& config);
 
 // What cannot be seen in one file alone: two devices with one serial, name,
-// port or hotkey, a device beside itself or beside one that is not there.
+// port or key, a device beside itself or beside one that is not there.
 // Empty when all is well.
 [[nodiscard]] std::string validate_config(const Config& config);
 

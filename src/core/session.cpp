@@ -226,6 +226,11 @@ bool Session::motion(const double dx, const double dy, const double now) {
     }
     follow_tap();
 
+    if (locked_) {
+        // Nothing pushed while locked counts once it is unlocked.
+        std::fill(pushes_.begin(), pushes_.end(), 0.0);
+        return false;
+    }
     const double threshold = return_threshold();
     for (size_t way = 0; way < ways; ++way) {
         if (way == 0 && !has_pc_)
@@ -422,6 +427,7 @@ int Session::leave() {
     const int back = has_pc_ ? portal_.to_pc(along(pc_edge())) : 0;
     if (remote_ && motion_.park)
         park();
+    locked_ = false;
     remote_ = false;
     return back;
 }

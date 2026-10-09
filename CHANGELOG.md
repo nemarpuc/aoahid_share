@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.5
+
+- Shortcuts belong to each device. A device's file has a `[keys]` section:
+  `switch` (to the device, and back to the computer when it has the input),
+  `lock`, `resync` and the five media keys. All start empty.
+- `lock` keeps the input on the device whatever edge the cursor reaches, for
+  a game that takes the mouse. The same key, a `switch` key, `release`,
+  `pause` or closing the device ends it. `status` has `locked` per device.
+- A device's media keys go to that device, wherever the input is; several
+  devices can each have their own.
+- Gone: `toggle_hotkey`, `panic_hotkey`, `pause_hotkey`, `resync_hotkey`, the
+  `[media]` hotkeys and `target` in `config.ini`, and `[device] hotkey`. They
+  are still read, and dropped; set the keys again in each device's Keys tab.
+  `aoahid_share pause`, `resume` and `release` are unchanged.
+- `status`: `protocol` is 3; `media_target` is gone.
+- Settings window: a Keys tab per device; the computer's page has an HID tab
+  and no hotkeys; Tools, then Status and Reports, are the last tabs; Status
+  lists what is wrong first; the media-key buttons are in each device's Tools.
+
 ## 0.3.4
 
 - CI and release builds link libaoahid 4.2.0 (was 4.1.0). The `find_package`

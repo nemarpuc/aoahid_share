@@ -170,10 +170,12 @@ class Daemon final : public CaptureHandler {
     // it last if it is ready, else the first that is.
     [[nodiscard]] size_t usual_phone() const;
     void close_phone(Phone& phone);
-    [[nodiscard]] bool hotkey(HidKey key, bool down, bool grabbed);
-    // Sends a media key to the device that has the input, or else the first
-    // one connected. False when there is none.
-    bool send_media(uint16_t usage, bool down);
+    [[nodiscard]] bool hotkey(HidKey key, bool down);
+    // Sends a media key to that phone. False when it is not open.
+    bool send_media(size_t phone, uint16_t usage, bool down);
+    // Where a media key goes when nothing names a device: the one that has
+    // the input, else the one that had it last, or any that is connected.
+    [[nodiscard]] size_t media_phone() const;
     void save_state(const std::string& key, const std::string& value);
     void publish_status();
     [[nodiscard]] std::string render_status();
@@ -183,10 +185,6 @@ class Daemon final : public CaptureHandler {
     [[nodiscard]] static double now() noexcept;
 
     Config config_;
-    Hotkey toggle_;
-    Hotkey panic_;
-    Hotkey pause_;
-    Hotkey resync_;
     std::string config_error_;
 
     Usb usb_;
@@ -197,9 +195,16 @@ class Daemon final : public CaptureHandler {
     std::atomic<int> active_{-1};
     std::atomic<bool> paused_{};
     uint8_t modifiers_{};
-    std::array<Hotkey, media_key_count> media_hotkeys_{};
-    // One per phone, in their order.
-    std::vector<Hotkey> device_hotkeys_;
+    // Each phone's shortcuts, parsed; one per phone, in their order.
+    struct PhoneKeys {
+        Hotkey switch_key;
+        Hotkey lock;
+        Hotkey resync;
+        std::array<Hotkey, media_key_count> media{};
+    };
+    std::vector<PhoneKeys> keys_;
+    // The device that has the input is locked: no edge takes the input off it.
+    std::atomic<bool> locked_{};
     // Devices the user asked to connect, by serial: only these are opened, and
     // one that drops out is opened again when it comes back. Starting the
     // daemon opens nothing. Capture thread only.
@@ -216,9 +221,10 @@ class Daemon final : public CaptureHandler {
     std::atomic<bool> fill_running_{};
     std::atomic<bool> fill_cancel_{};
     std::string fill_serial_;
-    // The media hotkey being held: its key, and the usage it sent.
+    // The media hotkey being held: its key, the usage it sent and to which phone.
     uint16_t held_media_key_{};
     uint16_t held_media_usage_{};
+    size_t held_media_phone_{};
     std::string state_;
     // Why no capture backend has started yet; guarded by state_mutex_.
     std::string start_error_;

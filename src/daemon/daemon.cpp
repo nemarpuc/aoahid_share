@@ -275,15 +275,16 @@ std::string Daemon::load_config() {
 
 void Daemon::adopt_config(Config loaded) {
     config_ = std::move(loaded);
-    static_cast<void>(parse_hotkey(config_.toggle_hotkey, toggle_));
-    static_cast<void>(parse_hotkey(config_.panic_hotkey, panic_));
-    static_cast<void>(parse_hotkey(config_.pause_hotkey, pause_));
-    static_cast<void>(parse_hotkey(config_.resync_hotkey, resync_));
-    for (size_t index = 0; index < media_key_count; ++index)
-        static_cast<void>(parse_hotkey(config_.media_hotkeys[index], media_hotkeys_[index]));
-    device_hotkeys_.assign(config_.devices.size(), Hotkey{});
-    for (size_t index = 0; index < config_.devices.size(); ++index)
-        static_cast<void>(parse_hotkey(config_.devices[index].hotkey, device_hotkeys_[index]));
+    keys_.assign(config_.devices.size(), PhoneKeys{});
+    for (size_t index = 0; index < config_.devices.size(); ++index) {
+        const DeviceKeys& from = config_.devices[index].keys;
+        PhoneKeys& to = keys_[index];
+        static_cast<void>(parse_hotkey(from.switch_key, to.switch_key));
+        static_cast<void>(parse_hotkey(from.lock, to.lock));
+        static_cast<void>(parse_hotkey(from.resync, to.resync));
+        for (size_t key = 0; key < media_key_count; ++key)
+            static_cast<void>(parse_hotkey(from.media[key], to.media[key]));
+    }
 }
 
 // What the phone is opened with. Only the number of buttons is fixed by it:
@@ -1118,6 +1119,7 @@ bool Daemon::edge_hit(const uint32_t barrier, const int t, const double push,
 void Daemon::leave() {
     if (active_ < 0)
         return;
+    locked_ = false;
     const Phone* phone = phones_[static_cast<size_t>(active_)].get();
     active_ = -1;
     int t = phone->session->leave();
@@ -1217,7 +1219,7 @@ void Daemon::button(unsigned button, const bool down) {
     phones_[static_cast<size_t>(active_)]->session->button(button, down);
 }
 
-bool Daemon::hotkey(const HidKey key, const bool down, const bool grabbed) {
+bool Daemon::hotkey(const HidKey key, const bool down) {
     if (key.media)
         return false;
     const uint8_t modifier = modifier_bit(key.usage);
@@ -1231,50 +1233,56 @@ bool Daemon::hotkey(const HidKey key, const bool down, const bool grabbed) {
     // A media hotkey works wherever the input is. Its release is matched by
     // the key alone: the modifiers are often let go first.
     if (!down && held_media_usage_ != 0 && key.usage == held_media_key_) {
-        static_cast<void>(send_media(held_media_usage_, false));
+        static_cast<void>(send_media(held_media_phone_, held_media_usage_, false));
         held_media_usage_ = held_media_key_ = 0;
         return true;
     }
-    for (size_t index = 0; index < media_key_count; ++index) {
-        if (!pressed(media_hotkeys_[index]))
+    const size_t count = std::min(keys_.size(), phones_.size());
+    for (size_t index = 0; index < count; ++index) {
+        for (size_t each = 0; each < media_key_count; ++each) {
+            if (!pressed(keys_[index].media[each]))
+                continue;
+            if (down && held_media_usage_ == 0 &&
+                send_media(index, media_keys[each].usage, true)) {
+                held_media_key_ = key.usage;
+                held_media_usage_ = media_keys[each].usage;
+                held_media_phone_ = index;
+            }
+            return true;
+        }
+    }
+    // A device's switch key takes the input to it, from the PC or from
+    // another device, and back to the PC when it has the input.
+    for (size_t index = 0; index < count; ++index) {
+        if (!pressed(keys_[index].switch_key))
             continue;
-        if (down && held_media_usage_ == 0 && send_media(media_keys[index].usage, true)) {
-            held_media_key_ = key.usage;
-            held_media_usage_ = media_keys[index].usage;
+        if (down) {
+            if (active_ == static_cast<int>(index))
+                leave();
+            else
+                static_cast<void>(enter_by_command(index));
         }
         return true;
     }
-    // A device's own hotkey takes the input straight to it, from the PC or
-    // from another device.
-    for (size_t index = 0; index < device_hotkeys_.size() && index < phones_.size(); ++index) {
-        if (!pressed(device_hotkeys_[index]))
-            continue;
-        if (down)
-            static_cast<void>(enter_by_command(index));
-        return true;
-    }
-    if (!pressed(toggle_) && !pressed(panic_) && !pressed(pause_) && !pressed(resync_))
+    // The lock and resync keys are those of the device that has the input.
+    const int active = active_;
+    if (active < 0 || static_cast<size_t>(active) >= count)
         return false;
-    if (!down)
-        return true;
-    if (pressed(panic_)) {
-        leave();
-    } else if (pressed(toggle_)) {
-        if (grabbed)
-            leave();
-        else
-            static_cast<void>(enter_by_command(usual_phone()));
-    } else if (pressed(pause_)) {
-        paused_ = !paused_;
-        if (paused_)
-            leave();
-    } else {
-        for (const std::unique_ptr<Phone>& phone : phones_) {
-            if (phone->session != nullptr)
-                phone->session->resync();
+    const PhoneKeys& own = keys_[static_cast<size_t>(active)];
+    Session& session = *phones_[static_cast<size_t>(active)]->session;
+    if (pressed(own.lock)) {
+        if (down) {
+            locked_ = !locked_;
+            session.set_locked(locked_);
         }
+        return true;
     }
-    return true;
+    if (pressed(own.resync)) {
+        if (down)
+            session.resync();
+        return true;
+    }
+    return false;
 }
 
 size_t Daemon::phone_named(const std::string& name) const { return find_device(config_, name); }
@@ -1293,28 +1301,25 @@ size_t Daemon::usual_phone() const {
     return phones_.size();
 }
 
-bool Daemon::send_media(const uint16_t usage, const bool down) {
-    // The device the config names; else the one with the input; else the
-    // one that had it last, or any that is connected.
-    size_t target =
-        config_.media_target.empty() ? phones_.size() : find_device(config_, config_.media_target);
-    if (target >= phones_.size() && active_ >= 0)
-        target = static_cast<size_t>(active_);
-    if (target >= phones_.size())
-        target = usual_phone();
+bool Daemon::send_media(const size_t phone, const uint16_t usage, const bool down) {
+    if (phone >= phones_.size() || phones_[phone]->link < 0)
+        return false;
+    usb_.sink(phones_[phone]->link).media(usage, down);
+    return true;
+}
+
+size_t Daemon::media_phone() const {
+    size_t target = active_ >= 0 ? static_cast<size_t>(active_) : usual_phone();
     for (size_t index = 0; target >= phones_.size() && index < phones_.size(); ++index) {
         if (phones_[index]->link >= 0)
             target = index;
     }
-    if (target >= phones_.size() || phones_[target]->link < 0)
-        return false;
-    usb_.sink(phones_[target]->link).media(usage, down);
-    return true;
+    return target;
 }
 
 void Daemon::key(const HidKey key, const bool down, const bool grabbed) {
     // A hotkey's own key never reaches the phone.
-    if (hotkey(key, down, grabbed) || !grabbed || active_ < 0)
+    if (hotkey(key, down) || !grabbed || active_ < 0)
         return;
     Session& session = *phones_[static_cast<size_t>(active_)]->session;
     if (key.media)
@@ -1328,6 +1333,7 @@ void Daemon::lost() {
         return;
     // The system already took the input back; only the phone needs tidying.
     static_cast<void>(phones_[static_cast<size_t>(active_)]->session->leave());
+    locked_ = false;
     active_ = -1;
 }
 
@@ -1339,6 +1345,7 @@ std::string Daemon::enter_by_command(const size_t index) {
         return "ok";
     if (!phone.layout_ok || !usb_.alive(phone.link))
         return "error=the device is not ready";
+    locked_ = false;
     if (active_ >= 0) {
         // From another device: the input is held already, and that
         // device's cursor is put away.
@@ -1368,8 +1375,6 @@ void Daemon::publish_status() {
     out << "backend=" << capture_->name() << "\n";
     if (!last_used_.empty())
         out << "last_used=" << one_line(last_used_) << "\n";
-    if (!config_.media_target.empty())
-        out << "media_target=" << one_line(config_.media_target) << "\n";
     if (!config_error_.empty())
         out << "config_error=" << one_line(config_error_) << "\n";
     if (!capture_error_.empty())
@@ -1459,7 +1464,7 @@ std::string Daemon::render_status() {
     if (view == nullptr)
         return "state=starting\n";
     std::ostringstream out;
-    out << "protocol=2\n";
+    out << "protocol=3\n";
     const int active = active_.load();
     out << "state=" << (active >= 0 ? "android" : paused_.load() ? "paused" : "pc") << "\n";
     if (active >= 0 && static_cast<size_t>(active) < view->phones.size())
@@ -1467,6 +1472,10 @@ std::string Daemon::render_status() {
     out << "files_version=" << files_version_.load() << "\n";
     out << view->head;
     const bool reading = fill_running_.load();
+    const PhoneView* const held =
+        locked_.load() && active >= 0 && static_cast<size_t>(active) < view->phones.size()
+            ? &view->phones[static_cast<size_t>(active)]
+            : nullptr;
     for (const PhoneView& phone : view->phones) {
         if (phone.serial.empty())
             continue;
@@ -1477,6 +1486,7 @@ std::string Daemon::render_status() {
         if (phone.link < 0)
             continue;
         const LinkStats stats = usb_.stats(phone.link);
+        out << prefix << "locked=" << (&phone == held ? "yes" : "no") << "\n";
         out << prefix << "reports=" << stats.reports << "\n";
         out << prefix << "merged=" << stats.merged << "\n";
         out << prefix << "depth=" << stats.depth << "\n";
@@ -1579,28 +1589,25 @@ std::string Daemon::command(const std::string& line) {
             answer = "ok";
         } else if (verb == "media") {
             // One press of a media key, for a desktop shortcut to run where
-            // the backend cannot see the keyboard itself.
+            // the backend cannot see the keyboard itself. "media KEY NAME"
+            // sends it to that device.
             std::string name;
             words >> name;
-            // "media KEY NAME" sends it to that device this once.
             const std::string device = rest_of(words);
-            const std::string usual = config_.media_target;
-            if (!device.empty())
-                config_.media_target = device;
+            const size_t target = device.empty() ? media_phone() : phone_named(device);
             answer = "error=media previous|play_pause|next|brightness_up|brightness_down";
-            if (!device.empty() && phone_named(device) >= phones_.size())
-                answer = "error=no such device";
             for (const MediaKey& each : media_keys) {
-                if (name != each.name || (!device.empty() && phone_named(device) >= phones_.size()))
+                if (name != each.name)
                     continue;
-                if (send_media(each.usage, true)) {
-                    static_cast<void>(send_media(each.usage, false));
+                if (!device.empty() && target >= phones_.size()) {
+                    answer = "error=no such device";
+                } else if (send_media(target, each.usage, true)) {
+                    static_cast<void>(send_media(target, each.usage, false));
                     answer = "ok";
                 } else {
                     answer = "error=no device is connected";
                 }
             }
-            config_.media_target = usual;
         } else if (verb == "probe") {
             // Moves a connected device's cursor by raw counts, for measuring
             // its display by eye when adb cannot be asked (docs/MATH.md).

@@ -544,6 +544,63 @@ TEST_CASE("leaving releases what was held") {
     CHECK_FALSE(session.remote());
 }
 
+TEST_CASE("a locked session keeps the input until it is unlocked") {
+    FakeAndroid phone;
+    phone.view = phone.logical = {1600, 2560};
+    Portal portal;
+    portal.side = Side::right;
+    portal.anchor = portal.segment = {0, 1079};
+    portal.android_length = 2560;
+    Session session(phone);
+    session.configure(portal, phone.view, 0, MotionConfig{}, AccelModel{});
+
+    session.enter(100, 1.0);
+    session.motion(50.0, 300.0, 1.01);
+    session.set_locked(true);
+    CHECK(session.locked());
+    // Pushed hard against the edge that faces the PC: nothing gives.
+    for (int step = 0; step < 200; ++step)
+        CHECK_FALSE(session.motion(-40.0, 0.0, 1.02 + step * 0.004));
+    CHECK(session.remote());
+    CHECK(phone.x == 0.0);
+    CHECK(inside(session.tracker().x(), phone.view_x()));
+    CHECK(inside(session.tracker().y(), phone.view_y()));
+
+    // What was pushed while locked does not count: unlocking alone, and a
+    // move away from the edge, leave the input where it is.
+    session.set_locked(false);
+    CHECK_FALSE(session.motion(40.0, 0.0, 2.0));
+    CHECK(session.remote());
+    // From here it returns as it always did.
+    bool back = false;
+    for (int step = 0; step < 200 && !back; ++step)
+        back = session.motion(-40.0, 0.0, 2.01 + step * 0.004);
+    CHECK(back);
+    CHECK(session.exit() == Session::to_pc);
+
+    // Leaving unlocks: the next visit is not held.
+    session.set_locked(true);
+    session.leave();
+    CHECK_FALSE(session.locked());
+}
+
+TEST_CASE("a locked session does not hand the cursor to a neighbour") {
+    FakeAndroid a;
+    a.view = a.logical = {1600, 2560};
+    Portal from_pc;
+    from_pc.side = Side::right;
+    from_pc.anchor = from_pc.segment = {0, 1079};
+    from_pc.android_length = 2560;
+    Session on_a(a);
+    on_a.configure(from_pc, a.view, 0, MotionConfig{}, AccelModel{},
+                   {{Side::right, {0, 2559}, 7}});
+    on_a.enter(100, 1.0);
+    on_a.set_locked(true);
+    for (int step = 0; step < 200; ++step)
+        CHECK_FALSE(on_a.motion(40.0, 0.0, 1.02 + step * 0.004));
+    CHECK(a.x == 1599.0);
+}
+
 TEST_CASE("key codes and hotkeys") {
     HidKey key;
     REQUIRE(evdev_to_hid(30, key));
@@ -596,7 +653,10 @@ TEST_CASE("config.ini round-trips and rejects what it does not know") {
                        "first_port = 7100\n";
     REQUIRE(parse_globals(text, config).empty());
     CHECK(config.backend == "portal");
-    CHECK(config.toggle_hotkey == "ctrl+alt+k");
+    // The 0.3.4 hotkeys are read and dropped: they live in each device's file now.
+    CHECK(format_globals(config).find("hotkey") == std::string::npos);
+    CHECK(format_globals(config).find("target") == std::string::npos);
+    CHECK(format_globals(config).find("play_pause") == std::string::npos);
     CHECK(config.mouse_buttons == 7);
     CHECK(config.button_map.size() == 3);
     CHECK(config.motion.sensitivity == 2.5);
@@ -605,9 +665,6 @@ TEST_CASE("config.ini round-trips and rejects what it does not know") {
     CHECK(!config.report_every);
     CHECK(!config.adb_kill_server);
     CHECK(config.adb_first_port == 7100);
-    CHECK(config.media_target == "Tab");
-    CHECK(config.media_hotkeys[1] == "ctrl+alt+p");
-    CHECK(config.media_hotkeys[0].empty());
     CHECK(config.devices.empty());
 
     Config again;
@@ -625,7 +682,8 @@ TEST_CASE("config.ini round-trips and rejects what it does not know") {
     CHECK(parse_globals("[nope]\n", untouched).substr(0, 7) == "line 1:");
     CHECK_FALSE(parse_globals("[motion]\nsensitivity = 0\n", untouched).empty());
     CHECK_FALSE(parse_globals("[motion]\nreport_rate_hz = 9000\n", untouched).empty());
-    CHECK_FALSE(parse_globals("[media]\nplay_pause = ctrl+\n", untouched).empty());
+    CHECK(parse_globals("[media]\nplay_pause = ctrl+\n", untouched).empty());
+    CHECK(parse_globals("[daemon]\npause_hotkey = ctrl+\n", untouched).empty());
     CHECK_FALSE(parse_globals("[media]\nwarp = ctrl+w\n", untouched).empty());
     CHECK_FALSE(parse_globals("[adb]\nfirst_port = 5555\n", untouched).empty());
     CHECK(untouched.backend == "auto");
@@ -656,10 +714,25 @@ TEST_CASE("a device's file round-trips and only replaces what it names") {
                        "enabled = false\n"
                        "[mouse]\n"
                        "enabled = false\n"
+                       "[keys]\n"
+                       "switch = ctrl+alt+1\n"
+                       "lock = ctrl+alt+l\n"
+                       "play_pause = ctrl+alt+p\n"
                        "[adb]\n"
                        "port = 7000\n"
                        "proxy = true\n";
     REQUIRE(parse_device(text, device).empty());
+    CHECK(device.keys.switch_key == "ctrl+alt+1");
+    CHECK(device.keys.lock == "ctrl+alt+l");
+    CHECK(device.keys.resync.empty());
+    CHECK(device.keys.media[1] == "ctrl+alt+p");
+    CHECK(device.keys.media[0].empty());
+    // The 0.3.4 key is gone from what is written.
+    CHECK(format_device(device).find("\nhotkey = ") == std::string::npos);
+    DeviceConfig broken;
+    CHECK_FALSE(parse_device("[keys]\nlock = ctrl+\n", broken).empty());
+    CHECK_FALSE(parse_device("[keys]\nwarp = ctrl+w\n", broken).empty());
+    CHECK(parse_device("[device]\nhotkey = ctrl+\n", broken).empty());
     CHECK(device.serial == "R5GL153Y5EX");
     CHECK(device.name == "Galaxy Tab S11");
     CHECK(label_of(device) == "Galaxy Tab S11");
@@ -800,12 +873,32 @@ TEST_CASE("devices get their ports, and what clashes between them is refused") {
     clash.devices[0].name = "Phone";
     CHECK_FALSE(validate_config(clash).empty());
     clash = config;
-    clash.devices[2].hotkey = "ctrl+alt+s";
+    // A switch or media key works wherever the input is: nothing else,
+    // on any device, may be the same combination.
+    clash.devices[0].keys.switch_key = "ctrl+alt+1";
+    clash.devices[1].keys.switch_key = "alt+ctrl+1";
     CHECK_FALSE(validate_config(clash).empty());
     clash = config;
-    clash.devices[0].hotkey = "ctrl+alt+1";
-    clash.devices[1].hotkey = "alt+ctrl+1";
+    clash.devices[0].keys.media[1] = "ctrl+alt+p";
+    clash.devices[1].keys.media[1] = "ctrl+alt+p";
     CHECK_FALSE(validate_config(clash).empty());
+    clash = config;
+    clash.devices[0].keys.switch_key = "ctrl+alt+1";
+    clash.devices[1].keys.lock = "ctrl+alt+1";
+    CHECK_FALSE(validate_config(clash).empty());
+    // Within one device every key is its own.
+    clash = config;
+    clash.devices[0].keys.lock = "ctrl+alt+l";
+    clash.devices[0].keys.resync = "ctrl+alt+l";
+    CHECK_FALSE(validate_config(clash).empty());
+    // Lock and resync act on the device that has the input, so two devices
+    // may use the same keys for them.
+    Config shared = config;
+    shared.devices[0].keys.switch_key = "ctrl+alt+1";
+    shared.devices[1].keys.switch_key = "ctrl+alt+2";
+    shared.devices[0].keys.lock = shared.devices[1].keys.lock = "ctrl+alt+l";
+    shared.devices[0].keys.resync = shared.devices[1].keys.resync = "ctrl+alt+r";
+    CHECK(validate_config(shared).empty());
 
     // Beside another device is fine; beside nothing or in a ring is not.
     Config chain = config;

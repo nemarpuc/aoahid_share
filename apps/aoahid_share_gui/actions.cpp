@@ -73,15 +73,6 @@ void computer_actions(App& app) {
     ImGui::SameLine();
     if (ImGui::Button("Stop the daemon"))
         app.quitting = true;
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Media keys");
-    for (const char* const key :
-         {"previous", "play_pause", "next", "brightness_down", "brightness_up"}) {
-        ImGui::SameLine();
-        if (ImGui::Button(key))
-            run(app, std::string("media ") + key);
-    }
     ImGui::EndDisabled();
 }
 
@@ -141,6 +132,17 @@ void device_buttons(App& app, DeviceConfig& device) {
     ImGui::SameLine();
     if (ImGui::Button("Open folder"))
         open_in_file_manager(devices_dir());
+
+    ImGui::BeginDisabled(state != "ready");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Media keys");
+    for (const char* const key :
+         {"previous", "play_pause", "next", "brightness_down", "brightness_up"}) {
+        ImGui::SameLine();
+        if (ImGui::Button(key))
+            run(app, std::string("media ") + key + " " + device.serial);
+    }
+    ImGui::EndDisabled();
 }
 
 // Whether a device is open now, or wanted open (it is then opened again when

@@ -94,10 +94,11 @@ TEST_CASE("a device's motion override can be set and cleared") {
 
 TEST_CASE("an empty text unsets a key that can be unset and is refused for one that cannot") {
     Config config;
-    config.pause_hotkey = "ctrl+alt+p";
-    CHECK(set_key_text(config, nullptr, find_key(KeyScope::computer, "daemon", "pause_hotkey"), "")
-              .empty());
-    CHECK(config.pause_hotkey.empty());
+    DeviceConfig device;
+    device.serial = "XYZ9";
+    device.keys.lock = "ctrl+alt+l";
+    CHECK(set_key_text(config, &device, find_key(KeyScope::device, "keys", "lock"), "").empty());
+    CHECK(device.keys.lock.empty());
     CHECK_FALSE(set_key_text(config, nullptr, find_key(KeyScope::computer, "mouse", "buttons"), "")
                     .empty());
     CHECK(config.mouse_buttons == 5);
@@ -183,7 +184,6 @@ std::string sample_for(const ConfigKey& key) {
 
 TEST_CASE("every key the library writes is in the table") {
     Config config;
-    config.media_hotkeys[0] = "ctrl+alt+left";
     config.button_map = {1, 2};
     for (const std::string& name : written(format_globals(config)))
         CHECK_MESSAGE(table_names(KeyScope::computer).count(name) == 1, name);

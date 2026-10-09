@@ -183,7 +183,7 @@ The device's own shortcuts, all empty (none) to start with.
 | `switch` | anywhere | takes the input to this device, and back to the computer when it has it |
 | `lock` | while the input is on this device | keeps the input here whatever edge the cursor reaches, also toward a device beside it; press again to let go |
 | `resync` | while the input is on this device | its next entry takes the corner reference |
-| `previous`, `play_pause`, `next`, `brightness_up`, `brightness_down` | anywhere | sends that media key to this device |
+| `previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`, `volume_up`, `volume_down` | anywhere | sends that media key to this device |
 
 A key is modifiers (`ctrl`, `shift`, `alt`, `meta`) and one key: a letter, a
 digit, `f1`..`f24`, `escape`, `space`, `tab`, `enter`, `backspace`, `insert`,
@@ -333,7 +333,7 @@ Top level: `protocol` (the version of this format), `state` (`pc`, `android`,
 | `resync` | re-reference the corner reference on the next crossing |
 | `rescan` | look for devices now and wait for the result. A scan is made when the daemon starts and when asked (no automatic background scanning). A scan sends a request to every USB device, so none is made while a device has the input |
 | `reload` | read the configuration files again; a device that is open stays open unless how it was opened changed (the mouse buttons, the proxy, its port), and then it is opened again; its mouse, keyboard, media and touch inputs are added or removed without opening it again; no other device is opened |
-| `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`); without a device it goes to the one that has the input, else the last one used |
+| `media KEY [SERIAL\|NAME]` | send a media key (`previous`, `play_pause`, `next`, `brightness_up`, `brightness_down`, `volume_up`, `volume_down`); without a device it goes to the one that has the input, else the last one used |
 | `probe SERIAL\|NAME corner` | send the device's cursor to its top left corner |
 | `probe SERIAL\|NAME move DX DY` | move the cursor by raw counts, up to 30000 |
 | `reports SERIAL\|NAME` | `ok`, then what the last reports to that device carried, one line each: `N MS REPORT TEXT` (the line's number, the clock in milliseconds, the report it went out in, and the call: mouse move/scroll/button, key, media, touch contact down/move/lift with its raw position). Recorded only for a few seconds after each ask |

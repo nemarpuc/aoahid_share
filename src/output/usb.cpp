@@ -1078,7 +1078,8 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
                 // rejects it and the link would fail.
                 if (!event.down && !link.touch_down[event.code])
                     break;
-                result = aoahid_touch(link.touch, event.code, down, event.x, event.y, nullptr);
+                result = aoahid_touchscreen_contact(link.touch, event.code, down, event.x, event.y,
+                                                    nullptr);
                 note_call(Trace::touch,
                           !event.down                   ? 0
                           : link.touch_down[event.code] ? 2

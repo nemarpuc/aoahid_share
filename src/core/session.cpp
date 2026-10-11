@@ -347,8 +347,7 @@ void Session::scroll(const double wheel, const double pan) {
     }
     // The notches touch scroll takes; the rest stay a mouse wheel. A positive
     // wheel scrolls the view up, so the content and the finger go down; a
-    // positive pan scrolls right, so the finger goes left. Both signs are
-    // confirmed on a device in Task 7.
+    // positive pan scrolls right, so the finger goes left.
     int wheel_out = w;
     int pan_out = p;
     double dy = 0.0;

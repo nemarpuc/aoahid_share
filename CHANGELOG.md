@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.10
+
+- The daemon no longer exits or goes deaf when the desktop ends the capture
+  (the compositor or X server restarts, or the portal session is closed). It
+  keeps the devices open and starts a capture again every 15 seconds, as at
+  startup; `status` says why meanwhile. See `docs/PLATFORMS.md`.
+
 ## 0.3.9
 
 - Built against libaoahid 1.0.0 as re-released on 2026-10-11. This program's

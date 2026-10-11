@@ -119,6 +119,19 @@ with only `DISPLAY`, `x11`; with neither, `evdev`.
 - `aoahid_share buttons` is not implemented here.
 - Built in CI; not yet run on real hardware.
 
+## When the desktop ends the capture
+
+A capture can end without the daemon asking: the compositor or the X server
+restarts, or the desktop closes the portal session. The daemon then gives the
+input back to the PC, keeps the devices open, and starts a capture again, the
+way it does at startup: it tries every 15 seconds, and `aoahid_share status`
+says `state=starting` and why until one is running. A capture that ended
+within 15 seconds of starting is tried again only after that wait.
+
+- `portal`: a new session may show the permission dialog again.
+- Checked on `x11` (the X server stopped and started again). Not yet checked
+  on `portal` or `layer_shell`.
+
 ## Synthetic input
 
 Input that another program injects is not forwarded to the device where the

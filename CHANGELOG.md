@@ -4,8 +4,9 @@
 
 - Built against libaoahid 1.0.0 as re-released on 2026-10-11. This program's
   code is unchanged, but its options structures grew there (each profile can
-  carry a battery report), so a 0.3.8 build does not load the new library and
-  this build does not load the old one.
+  carry a battery report), so a 0.3.8 build cannot open its HIDs with the new
+  library, nor this build with the old one: put the matching library next to
+  the programs.
 
 ## 0.3.8
 

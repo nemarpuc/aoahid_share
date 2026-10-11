@@ -36,10 +36,8 @@ constexpr double settle_seconds = 0.15;
 constexpr auto health_period = std::chrono::milliseconds(250);
 // How long the adb server takes to let go of the phones once it is stopped.
 constexpr auto adb_release_wait = std::chrono::milliseconds(800);
-// A capture backend that would not start is tried again after 15 seconds,
-// waited out in short steps so a quit is noticed.
-constexpr auto retry_step = std::chrono::milliseconds(200);
-constexpr int retry_steps = 75;
+// A capture backend that would not start is tried again after 15 seconds.
+constexpr auto retry_wait = std::chrono::seconds(15);
 // Counts that take a cursor to a display's edge from anywhere, and the most
 // one `probe` may move.
 constexpr int probe_reach = 30000;
@@ -241,10 +239,29 @@ double Daemon::now() noexcept {
         .count();
 }
 
+void Daemon::post_capture(std::function<void()> task) {
+    const std::lock_guard<std::mutex> lock(capture_mutex_);
+    pending_.push_back(std::move(task));
+    if (capture_ != nullptr)
+        capture_->post([this] { run_pending(); });
+    else
+        pending_wake_.notify_one();
+}
+
+void Daemon::run_pending() {
+    std::vector<std::function<void()>> tasks;
+    {
+        const std::lock_guard<std::mutex> lock(capture_mutex_);
+        tasks.swap(pending_);
+    }
+    for (const std::function<void()>& task : tasks)
+        task();
+}
+
 void Daemon::on_capture(const std::function<void()>& task) {
     auto done = std::make_shared<std::promise<void>>();
     std::future<void> finished = done->get_future();
-    capture_->post([task, done] {
+    post_capture([task, done] {
         task();
         done->set_value();
     });
@@ -346,6 +363,59 @@ void Daemon::rebuild_phones() {
     relayout();
 }
 
+bool Daemon::start_capture(std::unique_ptr<Capture> given, bool wait_first) {
+    const bool injected = given != nullptr;
+    for (bool wait = wait_first;; wait = true) {
+        if (wait) {
+            // There is no backend to hand work to: it is done here instead.
+            const auto until = std::chrono::steady_clock::now() + retry_wait;
+            std::unique_lock<std::mutex> lock(capture_mutex_);
+            while (!quit_early_.load(std::memory_order_acquire)) {
+                if (!pending_.empty()) {
+                    lock.unlock();
+                    run_pending();
+                    lock.lock();
+                } else if (pending_wake_.wait_until(lock, until) == std::cv_status::timeout) {
+                    break;
+                }
+            }
+        }
+        if (quit_early_.load(std::memory_order_acquire))
+            return false;
+
+        CaptureEnv env;
+        {
+            const std::lock_guard<std::mutex> lock(state_mutex_);
+            env.restore_token = state_get(state_, "restore_token");
+        }
+        env.save_restore_token = [this](const std::string& token) {
+            save_state("restore_token", token);
+        };
+        std::string error;
+        std::vector<std::unique_ptr<Capture>> candidates;
+        if (injected)
+            candidates.push_back(std::move(given));
+        else
+            candidates = capture_candidates(config_.backend, error);
+        for (std::unique_ptr<Capture>& candidate : candidates) {
+            error = candidate->start(*this, env);
+            if (error.empty()) {
+                const std::lock_guard<std::mutex> lock(capture_mutex_);
+                capture_ = std::move(candidate);
+                return true;
+            }
+            error = std::string(candidate->name()) + ": " + error;
+            log_line(error);
+        }
+        {
+            const std::lock_guard<std::mutex> lock(state_mutex_);
+            start_error_ = error;
+        }
+        if (injected)
+            return false;
+    }
+}
+
 int Daemon::run(std::unique_ptr<Capture> capture) {
     // Each run starts the log over, so it never grows without bound.
     {
@@ -368,43 +438,11 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     // dialog went unanswered, or the session is still coming up at login.
     // The daemon stays, says why through `status`, and tries again.
     const bool injected = capture != nullptr;
-    for (;;) {
-        CaptureEnv env;
-        {
-            const std::lock_guard<std::mutex> lock(state_mutex_);
-            env.restore_token = state_get(state_, "restore_token");
-        }
-        env.save_restore_token = [this](const std::string& token) {
-            save_state("restore_token", token);
-        };
-        std::vector<std::unique_ptr<Capture>> candidates;
-        if (injected)
-            candidates.push_back(std::move(capture));
-        else
-            candidates = capture_candidates(config_.backend, error);
-        for (std::unique_ptr<Capture>& candidate : candidates) {
-            error = candidate->start(*this, env);
-            if (error.empty()) {
-                capture_ = std::move(candidate);
-                break;
-            }
-            error = std::string(candidate->name()) + ": " + error;
-            log_line(error);
-        }
-        if (capture_ != nullptr)
-            break;
-        {
-            const std::lock_guard<std::mutex> lock(state_mutex_);
-            start_error_ = error;
-        }
+    if (!start_capture(std::move(capture), false)) {
         if (injected)
             return 1;
-        for (int step = 0; step < retry_steps && !quit_early_.load(); ++step)
-            std::this_thread::sleep_for(retry_step);
-        if (quit_early_.load()) {
-            usb_.stop();
-            return 0;
-        }
+        usb_.stop();
+        return 0;
     }
     log_line(std::string("capturing input with ") + capture_->name());
     monitors_ = capture_->monitors();
@@ -412,10 +450,43 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
 
     watching_ = false;
     device_thread_ = std::thread([this] { device_loop(); });
-    ready_.store(true, std::memory_order_release);
-    // A quit that came while starting up had nothing to stop yet.
-    if (!quit_early_.load(std::memory_order_acquire))
+    for (;;) {
+        ready_.store(true, std::memory_order_release);
+        const auto started = std::chrono::steady_clock::now();
+        // A quit that came while starting up had nothing to stop yet.
+        if (quit_early_.load(std::memory_order_acquire))
+            break;
         capture_->run();
+        if (quit_early_.load(std::memory_order_acquire) || injected)
+            break;
+
+        // The desktop ended the capture (its compositor or X server went
+        // away, or it closed the session). The phones stay open and another
+        // backend is started, as at startup.
+        ready_.store(false, std::memory_order_release);
+        lost();
+        const std::string ended = std::string(capture_->name()) + ": the capture ended";
+        log_line(ended);
+        {
+            const std::lock_guard<std::mutex> lock(state_mutex_);
+            start_error_ = ended;
+        }
+        std::unique_ptr<Capture> old;
+        {
+            const std::lock_guard<std::mutex> lock(capture_mutex_);
+            old = std::move(capture_);
+        }
+        old.reset();
+        // One that ended as soon as it started is not tried again at once.
+        const bool brief = std::chrono::steady_clock::now() - started < retry_wait;
+        if (!start_capture(nullptr, brief))
+            break;
+        log_line(std::string("capturing input with ") + capture_->name());
+        run_pending();
+        monitors_ = capture_->monitors();
+        relayout();
+        publish_status();
+    }
 
     finished_.store(true, std::memory_order_release);
     watch_.stop();
@@ -448,8 +519,14 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
 
 void Daemon::quit() {
     quit_early_.store(true, std::memory_order_release);
-    if (ready_.load(std::memory_order_acquire))
-        capture_->stop();
+    {
+        const std::lock_guard<std::mutex> lock(capture_mutex_);
+        // Before it is ready the run loop sees quit_early_ itself, and some
+        // backends can only be stopped once they run.
+        if (capture_ != nullptr && ready_.load(std::memory_order_acquire))
+            capture_->stop();
+    }
+    pending_wake_.notify_all();
 }
 
 void Daemon::close_phone(Phone& phone) {
@@ -1070,8 +1147,8 @@ std::string Daemon::start_fill(const size_t index) {
         // themselves is left alone.
         if (created)
             adb.disconnect(port);
-        capture_->post([this, serial, generation, read, facts = std::move(facts),
-                        problem = std::move(problem)] {
+        post_capture([this, serial, generation, read, facts = std::move(facts),
+                      problem = std::move(problem)] {
             finish_fill(serial, generation, read, facts, problem);
         });
     });
@@ -1568,6 +1645,11 @@ std::string Daemon::command(const std::string& line) {
         return render_status();
 
     on_capture([&] {
+        // The capture ended after this command was let through.
+        if (capture_ == nullptr) {
+            answer = "error=the daemon is still starting";
+            return;
+        }
         if (verb == "release") {
             leave();
             answer = "ok";

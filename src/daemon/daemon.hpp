@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -134,6 +135,15 @@ class Daemon final : public CaptureHandler {
 
     // Runs a function on the capture thread and waits for it.
     void on_capture(const std::function<void()>& task);
+    // Hands a task to the capture thread without waiting for it. It is kept
+    // here, not in the backend, so it survives the backend being replaced.
+    void post_capture(std::function<void()> task);
+    // Runs what post_capture() has queued. Capture thread only.
+    void run_pending();
+    // Makes a backend and starts it, trying again every 15 s; `given` is
+    // tried once instead. False when none started: a quit came, or `given`
+    // failed. With wait_first the first try comes after the wait.
+    [[nodiscard]] bool start_capture(std::unique_ptr<Capture> given, bool wait_first);
 
     [[nodiscard]] std::string load_config();
     // Takes a config that has read and validated well into use.
@@ -190,6 +200,11 @@ class Daemon final : public CaptureHandler {
     Usb usb_;
     std::unique_ptr<Capture> capture_;
     std::string capture_error_;
+    // Guards capture_ against the threads that post to it or stop it while
+    // the capture thread replaces it, and guards pending_.
+    std::mutex capture_mutex_;
+    std::condition_variable pending_wake_;
+    std::vector<std::function<void()>> pending_;
     std::vector<Monitor> monitors_;
     std::vector<std::unique_ptr<Phone>> phones_;
     std::atomic<int> active_{-1};

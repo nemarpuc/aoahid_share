@@ -55,8 +55,8 @@ aoahid_device_options device_options() noexcept {
     options.linux_hid_fields_per_report_policy = 256U;
     options.linux_hid_global_stack_depth_policy = 4U;
     options.linux_hid_usages_policy = 12288U;
-    options.linux_hid_report_data_bits_policy = 65528U;
-    options.linux_hid_report_size_bits_policy = 256U;
+    options.linux_hid_report_data_policy_bits = 65528U;
+    options.linux_hid_report_size_policy_bits = 256U;
     options.target_ep0_data_policy_bytes = descriptor_policy_bytes;
     options.host_control_buffer_policy_bytes = descriptor_policy_bytes;
     options.interface_claim_policy = AOAHID_INTERFACE_CLAIM_NONE;
@@ -153,7 +153,7 @@ aoahid_result create_touchscreen(const Size size, aoahid_spec** spec) noexcept {
     // Contact 0 is the click, contact 1 the scroll; one report carries both.
     options.maximum_contacts = 2U;
     options.contacts_per_report = 2U;
-    options.contact_identifier = field(0, 15, 4);
+    options.contact_id = field(0, 15, 4);
     options.x = field(0, size.w - 1, bits_for(size.w - 1));
     options.y = field(0, size.h - 1, bits_for(size.h - 1));
     options.contact_count = field(0, 2, 2);
@@ -1066,7 +1066,7 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
             break;
         case event_media:
             if (can_toggle) {
-                result = aoahid_toggle(link.toggle, event.code, down);
+                result = aoahid_toggle_usage(link.toggle, event.code, down);
                 note_call(Trace::media, event.down, event.code);
                 toggle = true;
             }

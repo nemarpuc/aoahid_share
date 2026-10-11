@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.8
+
+- Builds against libaoahid 1.0.0 as it is released. Only names changed: the
+  media key call is `aoahid_toggle_usage` (it was `aoahid_toggle`), and the
+  options fields are `contact_id`, `linux_hid_report_data_policy_bits`, and
+  `linux_hid_report_size_policy_bits`. Behavior is the same.
+
 ## 0.3.7
 
 - Builds against libaoahid 1.0.0: the `find_package` minimum is 1.0.0 and CI

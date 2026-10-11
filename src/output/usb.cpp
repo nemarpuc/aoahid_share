@@ -1066,7 +1066,7 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
             break;
         case event_media:
             if (can_toggle) {
-                result = aoahid_toggle(link.toggle, event.down ? event.code : uint16_t{0}, down);
+                result = aoahid_toggle(link.toggle, event.code, down);
                 note_call(Trace::media, event.down, event.code);
                 toggle = true;
             }

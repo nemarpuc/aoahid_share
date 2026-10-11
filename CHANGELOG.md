@@ -5,8 +5,9 @@
 - Builds against libaoahid 1.0.0: the `find_package` minimum is 1.0.0 and CI
   and the release build use the 1.0.0 release assets. libaoahid restarted its
   version numbering at 1.0.0 and withdrew the earlier release tags. The only
-  code change is the name of the touchscreen call, `aoahid_touchscreen_contact`
-  (was `aoahid_touch`).
+  code changes are the names of two calls, `aoahid_touchscreen_contact` (was
+  `aoahid_touch`) and `aoahid_keyboard_key` (was `aoahid_kbd`), and a media key
+  release that now names its key instead of 0.
 
 ## 0.3.6
 

@@ -1059,7 +1059,7 @@ void Usb::deliver(Link& link, const Motion& motion, const Event* events, const s
             break;
         case event_key:
             if (can_keyboard) {
-                result = aoahid_kbd(link.keyboard, event.code, down);
+                result = aoahid_keyboard_key(link.keyboard, event.code, down);
                 note_call(Trace::key, event.down, event.code);
                 keyboard = true;
             }

@@ -29,19 +29,19 @@ jobs:
           - os: ubuntu-24.04
             platform: linux
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
-            aoahid_sha256: 6783248a080d8a0ed3d029932451ccc6293006e7a4ba6ba1dc755885cf61bc1e
+            aoahid_sha256: 2aec821624f0eaeb331cd392aa1bebbdeeee9f4e4f29136365cf200f80d0a601
           - os: windows-2022
             platform: windows
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
-            aoahid_sha256: ee200f0da5bb99c7b8c7e0c029fc9f3ddf2e8d927e7ebdfe0ab1a8e216bef8a1
+            aoahid_sha256: 8c724a8d5560100d68e8ff79d288ef3586ed5c7ae813fee1fbffcb75ca91fe15
           - os: macos-15
             platform: macos
             aoahid_asset: libaoahid-*-macos-arm64-shared.tar.gz
-            aoahid_sha256: 28de253c72c930fe6fa1a19ae65bc38bf76346b735e8036f93c32f81bb422d20
+            aoahid_sha256: 971c81b884c5e955ab4ed16838fcc3e50c4dfd08c3ba5281ede036a158cf9c09
           - os: macos-15-intel
             platform: macos
             aoahid_asset: libaoahid-*-macos-x86_64-shared.tar.gz
-            aoahid_sha256: 7ab09e0f53dcfe32739fe747100b2073e8edad5bff844904fe092e781e34dcf4
+            aoahid_sha256: dbde908619945001d321cb35c5651b35b19185a7aa4ab6eb63f667c619054194
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

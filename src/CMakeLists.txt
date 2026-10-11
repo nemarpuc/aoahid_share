@@ -121,7 +121,7 @@ target_link_libraries(aoahid_share_daemon_lib PUBLIC aoahid_share_control aoahid
 aoahid_share_warnings(aoahid_share_daemon_lib)
 
 # aoahid_adb_proxy v3.2.1 (MIT), vendored unmodified from
-# github.com/nemarpuc/aoahid_adb_proxy. It needs libaoahid 4.0. It is built
+# github.com/nemarpuc/aoahid_adb_proxy. It needs libaoahid 1.0. It is built
 # apart from the rest so the project's warning flags do not apply to it.
 add_library(aoahid_share_proxy STATIC
   "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy/aoahid_adb_proxy.cpp")

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(aoahid_share VERSION 0.3.6 LANGUAGES C CXX)
+project(aoahid_share VERSION 0.3.7 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,9 +41,9 @@ function(aoahid_share_warnings target)
   endif()
 endfunction()
 
-# 4.0.0 is the first libaoahid with the Channel API the vendored
+# 1.0.0 is the first libaoahid with the Channel API the vendored
 # aoahid_adb_proxy needs.
-find_package(aoahid 4.0.0 CONFIG REQUIRED)
+find_package(aoahid 1.0.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_subdirectory(src)

@@ -208,7 +208,7 @@ shares a screen edge with your desktop's own edge features:
 
 ## Building
 
-Requires CMake 3.22, a C++20 compiler and libaoahid 4.0 or newer. On Linux each
+Requires CMake 3.22, a C++20 compiler and libaoahid 1.0 or newer. On Linux each
 backend is built when its libraries are found:
 
 | Backend | Packages (Debian names) |

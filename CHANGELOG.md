@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.7
+
+- Builds against libaoahid 1.0.0: the `find_package` minimum is 1.0.0 and CI
+  and the release build use the 1.0.0 release assets. libaoahid restarted its
+  version numbering at 1.0.0 and withdrew the earlier release tags. The code is
+  unchanged.
+
 ## 0.3.6
 
 - Volume up and volume down join the media keys: `volume_up` and

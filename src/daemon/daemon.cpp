@@ -451,10 +451,13 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
     watching_ = false;
     device_thread_ = std::thread([this] { device_loop(); });
     for (;;) {
-        ready_.store(true, std::memory_order_release);
+        // quit() sets quit_early_ and then reads ready_; this sets ready_ and
+        // then reads quit_early_. Sequentially consistent, so one of the two
+        // sees the other and a quit is never lost between them.
+        ready_.store(true);
         const auto started = std::chrono::steady_clock::now();
         // A quit that came while starting up had nothing to stop yet.
-        if (quit_early_.load(std::memory_order_acquire))
+        if (quit_early_.load())
             break;
         capture_->run();
         if (quit_early_.load(std::memory_order_acquire) || injected)
@@ -465,6 +468,12 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
         // backend is started, as at startup.
         ready_.store(false, std::memory_order_release);
         lost();
+        // The backend that is gone will not report what was held as let go.
+        if (held_media_usage_ != 0) {
+            static_cast<void>(send_media(held_media_phone_, held_media_usage_, false));
+            held_media_usage_ = held_media_key_ = 0;
+        }
+        modifiers_ = 0;
         const std::string ended = std::string(capture_->name()) + ": the capture ended";
         log_line(ended);
         {
@@ -477,14 +486,17 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
             old = std::move(capture_);
         }
         old.reset();
+        // A command let through just before is answered now, not after the
+        // next backend has started, which can take as long as its dialog.
+        run_pending();
         // One that ended as soon as it started is not tried again at once.
         const bool brief = std::chrono::steady_clock::now() - started < retry_wait;
         if (!start_capture(nullptr, brief))
             break;
         log_line(std::string("capturing input with ") + capture_->name());
-        run_pending();
         monitors_ = capture_->monitors();
         relayout();
+        run_pending();
         publish_status();
     }
 
@@ -518,12 +530,12 @@ int Daemon::run(std::unique_ptr<Capture> capture) {
 }
 
 void Daemon::quit() {
-    quit_early_.store(true, std::memory_order_release);
+    quit_early_.store(true);
     {
         const std::lock_guard<std::mutex> lock(capture_mutex_);
         // Before it is ready the run loop sees quit_early_ itself, and some
         // backends can only be stopped once they run.
-        if (capture_ != nullptr && ready_.load(std::memory_order_acquire))
+        if (capture_ != nullptr && ready_.load())
             capture_->stop();
     }
     pending_wake_.notify_all();

@@ -367,6 +367,9 @@ class PortalCapture final : public Capture {
             // dispatched now: poll() only wakes for what is still unread.
             while (dbus_connection_get_dispatch_status(connection_) == DBUS_DISPATCH_DATA_REMAINS)
                 dbus_connection_dispatch(connection_);
+            // The session's end may have been among them.
+            if (broken_)
+                break;
             pollfd fds[3] = {{bus_fd, POLLIN, 0},
                              {ei_ != nullptr ? ei_get_fd(ei_) : -1, POLLIN, 0},
                              {tasks_.fd(), POLLIN, 0}};

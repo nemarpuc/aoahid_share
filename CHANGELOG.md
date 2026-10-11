@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.9
+
+- Built against libaoahid 1.0.0 as re-released on 2026-10-11. This program's
+  code is unchanged, but its options structures grew there (each profile can
+  carry a battery report), so a 0.3.8 build does not load the new library and
+  this build does not load the old one.
+
 ## 0.3.8
 
 - Builds against libaoahid 1.0.0 as it is released. Only names changed: the

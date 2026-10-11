@@ -362,7 +362,7 @@ class PortalCapture final : public Capture {
         int bus_fd = -1;
         if (!dbus_connection_get_unix_fd(connection_, &bus_fd))
             return;
-        while (!stopping_.load(std::memory_order_acquire)) {
+        while (!stopping_.load(std::memory_order_acquire) && !broken_) {
             // What libdbus already read (the reply that came with a call) is
             // dispatched now: poll() only wakes for what is still unread.
             while (dbus_connection_get_dispatch_status(connection_) == DBUS_DISPATCH_DATA_REMAINS)
@@ -704,6 +704,7 @@ class PortalCapture final : public Capture {
             const char* path = dbus_message_get_path(message);
             if (path != nullptr && session_ == path) {
                 session_.clear();
+                broken_ = true;
                 if (active_) {
                     active_ = false;
                     handler_->lost();
@@ -776,6 +777,7 @@ class PortalCapture final : public Capture {
                 break;
             case EI_EVENT_DISCONNECT:
                 disconnected = true;
+                broken_ = true;
                 if (active_) {
                     active_ = false;
                     handler_->lost();
@@ -839,6 +841,9 @@ class PortalCapture final : public Capture {
     ei* ei_{};
     TaskQueue tasks_;
     std::atomic<bool> stopping_{};
+    // The session or the input stream ended: nothing more can come of this
+    // object, and run() returns so the daemon can start another.
+    bool broken_{};
 
     std::string sender_;
     std::string session_;

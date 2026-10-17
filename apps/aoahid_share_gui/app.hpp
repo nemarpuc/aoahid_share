@@ -79,12 +79,12 @@ struct App {
     bool reports_frozen{};
     double reports_next{};
 
-    // Setting a device up by eye: counts stepped from its top left corner.
+    // Calibrating display gain: stepped from its top left corner.
     bool probing{};
+    int probe_step{1}; // 1: measuring width, 2: measuring height, 3: completed
     std::string probe_serial;
     int probe_x{};
     int probe_y{};
-    double probe_diagonal{};
 
     // Dragging a device in the picture: where along it the mouse took hold.
     int drag_offset{};

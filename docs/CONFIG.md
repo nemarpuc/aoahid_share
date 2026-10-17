@@ -157,6 +157,15 @@ On Linux with a glibc older than 2.34, or musl, an adb server started by `adb
 connect` can keep the proxy's port bound after the daemon exits (the
 descriptor cannot be closed on `exec` there).
 
+`calibrate` (`aoahid_share calibrate [DEVICE]`) runs an interactive calibration
+wizard in the terminal without requiring ADB. It resets the cursor to the
+top-left corner, lets you move the cursor across the width and height using the
+Space key (tap for 1 count, hold for continuous motion, Backspace to step back,
+Enter to confirm), and directly sets your device's screen dimensions (Width, Height,
+Gain = 1.0, and Accel = off) based on the measured counts and screen rotation
+([MATH.md](MATH.md#without-adb)). Upon confirmation, the dimensions are saved
+directly into the device's settings file and the daemon is reloaded.
+
 ## Per-device files (`device/<serial>.ini`)
 
 Each configured device has its own file named after its USB serial number

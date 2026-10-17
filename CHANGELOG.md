@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.11
+
+- Interactive display calibration wizard in GUI and CLI (`aoahid_share calibrate`)
+  to calibrate screen boundaries and cursor gain without ADB.
+- Reorganized Screen tab in the settings window: simpler resolution and gain
+  view, collapsed ADB details, and clear cursor idle / entry mode selection
+  (parked, aligned, or corner).
+
 ## 0.3.10
 
 - The daemon no longer exits or goes deaf when the desktop ends the capture

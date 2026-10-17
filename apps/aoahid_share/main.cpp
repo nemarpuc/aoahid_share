@@ -3,6 +3,7 @@
 // aoahid_share: sends one command to the running daemon and prints its answer.
 #include "aoahid_share/config.hpp"
 
+#include "calibrate.hpp"
 #include "control.hpp"
 #include "paths.hpp"
 #include "store.hpp"
@@ -27,6 +28,7 @@ void usage() {
               "  disconnect DEVICE   close a device and leave it closed\n"
               "  fill DEVICE         read a connected device through its ADB proxy (which\n"
               "                      has to be on) and write what it says into its file\n"
+              "  calibrate [DEVICE]  interactive wizard to measure screen bounds via Space key\n"
               "  forget DEVICE       remove a device and its file\n"
               "  rescan              look for plugged-in devices now\n"
               "  media KEY [DEVICE]  press a media key: previous, play_pause, next,\n"
@@ -56,6 +58,9 @@ int main(const int argc, char** argv) {
     if (std::strcmp(argv[1], "--version") == 0 || std::strcmp(argv[1], "-V") == 0) {
         std::puts("aoahid_share " AOAHID_SHARE_VERSION);
         return 0;
+    }
+    if (std::strcmp(argv[1], "calibrate") == 0) {
+        return aoas::run_calibrate(argc, argv);
     }
     if (std::strcmp(argv[1], "paths") == 0) {
         std::printf("config=%s\ndevices=%s\nstate=%s\ncontrol=%s\n",

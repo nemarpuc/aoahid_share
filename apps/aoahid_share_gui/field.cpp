@@ -55,6 +55,18 @@ bool clear_row(App& app, const aoas::ConfigKey& key, aoas::DeviceConfig* device,
     return true;
 }
 
+std::string choice_label(const aoas::ConfigKey& key, const std::string& option) {
+    if (std::strcmp(key.key, "entry") == 0) {
+        if (option == "parked")
+            return "Hide in bottom-right corner (parked)";
+        if (option == "aligned")
+            return "From last exit position (aligned)";
+        if (option == "corner")
+            return "Calibrate at corner every time (corner)";
+    }
+    return option;
+}
+
 // `follow` is what a device's own choice falls back to: the computer's value,
 // or null when the row is not a device's override of the computer's.
 bool choice_combo(App& app, const aoas::ConfigKey& key, aoas::DeviceConfig* device,
@@ -63,11 +75,13 @@ bool choice_combo(App& app, const aoas::ConfigKey& key, aoas::DeviceConfig* devi
     bool changed = false;
     const std::string current = now.value_or(follow != nullptr ? std::string() : key.initial);
     const bool can_be_unset = key.initial[0] == '\0' && key.scope != aoas::KeyScope::both;
+    const std::string follow_label = follow != nullptr ? choice_label(key, *follow) : std::string();
     const std::string follow_text =
-        follow != nullptr ? "Same as the computer (" + *follow + ")" : std::string();
+        follow != nullptr ? "Same as the computer (" + follow_label + ")" : std::string();
+    const std::string current_label = choice_label(key, current);
     const char* const preview = follow != nullptr && !now.has_value() ? follow_text.c_str()
                                 : current.empty()                     ? "(not set)"
-                                                                      : current.c_str();
+                                                                      : current_label.c_str();
     if (ImGui::BeginCombo("##choice", preview)) {
         if (follow != nullptr && ImGui::Selectable(follow_text.c_str(), !now.has_value()))
             changed = clear_row(app, key, device, id);
@@ -78,7 +92,8 @@ bool choice_combo(App& app, const aoas::ConfigKey& key, aoas::DeviceConfig* devi
             const size_t bar = rest.find('|');
             const std::string option(rest.substr(0, bar));
             rest = bar == std::string_view::npos ? std::string_view() : rest.substr(bar + 1);
-            if (ImGui::Selectable(option.c_str(), option == current))
+            const std::string label = choice_label(key, option);
+            if (ImGui::Selectable(label.c_str(), option == current))
                 changed = apply_text(app, key, device, option, id);
         }
         ImGui::EndCombo();
@@ -95,6 +110,8 @@ namespace {
 std::string readable(const aoas::ConfigKey& key) {
     if (std::strcmp(key.key, "report_rate_hz") == 0)
         return "Polling rate";
+    if (std::strcmp(key.key, "entry") == 0)
+        return "Cursor idle / entry mode";
     std::string name = key.key;
     for (char& c : name) {
         if (c == '_')

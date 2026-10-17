@@ -13,7 +13,7 @@ if(WIN32)
   endif()
 endif()
 
-add_executable(aoahid_share aoahid_share/main.cpp)
+add_executable(aoahid_share aoahid_share/main.cpp aoahid_share/calibrate.cpp)
 target_link_libraries(aoahid_share PRIVATE aoahid_share_control)
 target_compile_definitions(aoahid_share PRIVATE AOAHID_SHARE_VERSION="${PROJECT_VERSION}")
 aoahid_share_warnings(aoahid_share)

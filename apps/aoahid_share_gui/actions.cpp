@@ -194,65 +194,168 @@ void device_files(App& app, DeviceConfig& device) {
 
 // The steps for a device that has no USB debugging: the cursor is stepped to
 // the corner by raw counts, and the size follows from where it stops.
+// Calibration wizard without ADB: measures exact gain by stepping to screen edges.
 void draw_probe(App& app, DeviceConfig& device) {
     if (app.probing && app.probe_serial != device.serial)
         app.probing = false;
-    look::heading("Set up without adb");
-    look::dim("For a device without USB debugging. Switch pointer acceleration off in its own "
-              "mouse settings and set its rotation first.");
+
+    look::heading("Screen Calibration Wizard (without ADB)");
+    look::dim("Directly measures screen bounds by stepping the cursor to each edge.\n"
+              "This sets Width, Height, and Gain = 1.0 without needing manual resolution lookup.\n"
+              "Ensure pointer acceleration is OFF in Android settings. If you change pointer speed\n"
+              "on your device later, counts will change and require re-calibration.");
+
     const std::string probe = "probe " + device.serial + " ";
-    ImGui::BeginDisabled(!app.daemon_running || device.serial.empty());
-    if (ImGui::Button("1  Send the cursor to the top left corner")) {
-        const std::string answer = command(app, probe + "corner");
-        app.probing = answer == "ok";
-        app.probe_serial = device.serial;
-        app.failed = !app.probing;
-        app.message = app.probing ? "probe corner" : answer_text(answer);
-        app.probe_x = 0;
-        app.probe_y = 0;
-    }
-    ImGui::EndDisabled();
-    if (!app.probing)
+
+    if (!app.probing) {
+        ImGui::BeginDisabled(!app.daemon_running || device.serial.empty());
+        if (ImGui::Button("Start Calibration Wizard")) {
+            const std::string answer = command(app, probe + "corner");
+            app.probing = answer == "ok";
+            app.probe_step = 1;
+            app.probe_serial = device.serial;
+            app.failed = !app.probing;
+            app.message = app.probing ? "probe corner" : answer_text(answer);
+            app.probe_x = 0;
+            app.probe_y = 0;
+        }
+        ImGui::EndDisabled();
         return;
-    const auto steps = [&](const char* id, int& total, const bool along_x) {
-        ImGui::PushID(id);
-        for (const int step : {-10, -1, 1, 10, 100, 500}) {
+    }
+
+    if (app.probe_step == 1) {
+        look::heading("Step 1/2: Measure Width (Horizontal)");
+        look::dim("Tip: Pushing slightly past the edge (+5 to +10 counts) is recommended.\n"
+                  "If counts are too few, the cursor may not reach the far edge to tap buttons.");
+
+        ImGui::Spacing();
+        look::dim("Move cursor down to see it clearly (recommended, does not affect measurement):");
+        if (ImGui::Button("Down 100")) {
+            command(app, probe + "move 0 100");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Up 100")) {
+            command(app, probe + "move 0 -100");
+        }
+
+        ImGui::Spacing();
+        look::dim("Move right until cursor reaches the right edge (+10 extra recommended):");
+
+        for (const int step : {1, 10, 100}) {
             char label[16];
-            std::snprintf(label, sizeof label, "%+d", step);
-            if (ImGui::Button(label, ImVec2(look::px(52), 0)) && total + step >= 0) {
-                const std::string move = probe + "move " + std::to_string(along_x ? step : 0) +
-                                         " " + std::to_string(along_x ? 0 : step);
-                if (command(app, move) == "ok")
-                    total += step;
+            std::snprintf(label, sizeof label, "%d", step);
+            if (ImGui::Button(label, ImVec2(look::px(60), 0))) {
+                if (command(app, probe + "move " + std::to_string(step) + " 0") == "ok")
+                    app.probe_x += step;
             }
             ImGui::SameLine();
         }
         ImGui::AlignTextToFramePadding();
-        ImGui::Text("%d", total);
-        ImGui::PopID();
-    };
-    look::dim("2  Step right until the arrow has all but left the screen at the right edge.");
-    steps("x", app.probe_x, true);
-    look::dim("3  The same downward, to the bottom edge.");
-    steps("y", app.probe_y, false);
-    ImGui::TextUnformatted("4  Its diagonal (inch)");
-    ImGui::SetNextItemWidth(look::px(120));
-    ImGui::InputDouble("##diagonal", &app.probe_diagonal, 0.0, 0.0, "%.1f");
-    ImGui::BeginDisabled(app.probe_x == 0 || app.probe_y == 0 || app.probe_diagonal <= 0.0 ||
-                         device.rotation < 0);
-    if (ImGui::Button("5  Use these values")) {
+        ImGui::Text("Total counts: %d", app.probe_x);
+
+        ImGui::Spacing();
+        ImGui::BeginDisabled(app.probe_x <= 0);
+        if (ImGui::Button("OK (Proceed to Height)##ok_step1")) {
+            command(app, probe + "corner");
+            app.probe_step = 2;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##cancel_step1")) {
+            app.probing = false;
+        }
+    } else if (app.probe_step == 2) {
+        look::heading("Step 2/2: Measure Height (Vertical)");
+        look::dim("Tip: Pushing slightly past the edge (+5 to +10 counts) is recommended.\n"
+                  "If counts are too few, the cursor may not reach the bottom edge to tap buttons.");
+
+        ImGui::Spacing();
+        look::dim("Move cursor right to see it clearly (recommended, does not affect measurement):");
+        if (ImGui::Button("Right 100")) {
+            command(app, probe + "move 100 0");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Left 100")) {
+            command(app, probe + "move -100 0");
+        }
+
+        ImGui::Spacing();
+        look::dim("Move down until cursor reaches the bottom edge (+10 extra recommended):");
+
+        for (const int step : {1, 10, 100}) {
+            char label[16];
+            std::snprintf(label, sizeof label, "%d", step);
+            if (ImGui::Button(label, ImVec2(look::px(60), 0))) {
+                if (command(app, probe + "move 0 " + std::to_string(step)) == "ok")
+                    app.probe_y += step;
+            }
+            ImGui::SameLine();
+        }
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Total counts: %d", app.probe_y);
+
+        ImGui::Spacing();
+        ImGui::BeginDisabled(app.probe_y <= 0);
+        if (ImGui::Button("OK (Review and Save)##ok_step2")) {
+            app.probe_step = 3;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##cancel_step2")) {
+            app.probing = false;
+        }
+    } else if (app.probe_step == 3) {
+        look::heading("Calibration Result");
+
+        if (device.rotation < 0)
+            device.rotation = 0;
+
+        const char* rotations[] = {"0° (Portrait)", "90° (Landscape)", "180° (Inverted)",
+                                   "270° (Landscape flipped)"};
+        int rot_idx = device.rotation == 90    ? 1
+                      : device.rotation == 180 ? 2
+                      : device.rotation == 270 ? 3
+                                               : 0;
+        ImGui::SetNextItemWidth(look::px(220));
+        if (ImGui::Combo("Screen rotation", &rot_idx, rotations, IM_ARRAYSIZE(rotations))) {
+            device.rotation = rot_idx == 1 ? 90 : rot_idx == 2 ? 180 : rot_idx == 3 ? 270 : 0;
+        }
+
         const bool turned = device.rotation == 90 || device.rotation == 270;
-        device.width = (turned ? app.probe_y : app.probe_x) + 1;
-        device.height = (turned ? app.probe_x : app.probe_y) + 1;
-        device.diagonal_inch = app.probe_diagonal;
-        device.gain = 1.0;
-        device.accel = AccelSetting::off;
-        app.probing = false;
-        edited_directly(app, device.serial, "detected");
+        const int comp_w = (turned ? app.probe_y : app.probe_x) + 1;
+        const int comp_h = (turned ? app.probe_x : app.probe_y) + 1;
+
+        char buf[300];
+        std::snprintf(buf, sizeof buf, "Measured counts: X = %d, Y = %d\n"
+                                       "Calculated screen size: %d x %d (Gain = 1.0, Accel = off)\n\n"
+                                       "Note: If you change pointer speed/settings on your device later,\n"
+                                       "please re-run this calibration.",
+                      app.probe_x, app.probe_y, comp_w, comp_h);
+        look::dim(buf);
+
+        ImGui::Spacing();
+        if (ImGui::Button("Save and Apply")) {
+            device.width = comp_w;
+            device.height = comp_h;
+            device.gain = 1.0;
+            device.accel = AccelSetting::off;
+            if (device.diagonal_inch <= 0.0)
+                device.diagonal_inch = 6.5;
+            app.probing = false;
+            edited_directly(app, device.serial, "detected");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Restart Wizard")) {
+            command(app, probe + "corner");
+            app.probe_step = 1;
+            app.probe_x = 0;
+            app.probe_y = 0;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##cancel_step3")) {
+            app.probing = false;
+        }
     }
-    ImGui::EndDisabled();
-    if (device.rotation < 0)
-        look::dim("Set its rotation to go on.");
 }
 
 void draw_actions(App& app) { computer_actions(app); }

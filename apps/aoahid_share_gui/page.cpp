@@ -78,21 +78,49 @@ void draw_gain_line(const DeviceConfig& device) {
 }
 
 void draw_device_screen(App& app, DeviceConfig& device) {
-    const std::string proxy = status_of(app, device, "proxy");
-    const bool proxy_ready = !proxy.empty() && proxy != "off";
-    ImGui::BeginDisabled(!app.daemon_running || !proxy_ready || !app.filling.empty());
-    if (ImGui::Button("Fill from ADB"))
-        start_fill(app, device.serial);
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (!proxy_ready)
-        look::dim("Connect the device and turn its ADB proxy on first.");
-    else
-        look::dim("Reads these from the device through its ADB proxy.");
+    look::heading("Display Resolution");
+    look::dim("Screen size in pixels (when read via ADB) or total mouse travel counts\n"
+              "(when calibrated without ADB). Configured automatically by the wizard below.");
+    draw_row(app, KeyScope::device, "detected", "width", &device, "Width");
+    draw_row(app, KeyScope::device, "detected", "height", &device, "Height");
+
     ImGui::Spacing();
-    draw_group(app, "Android screen", &device);
+    look::heading("Pointer Gain (Sensitivity)");
+    look::dim("Pixels moved on the device per 1 mouse count (e.g. 2.0 = 2 px per mouse step).");
+    draw_row(app, KeyScope::device, "detected", "gain", &device, "Gain (px/count)");
     draw_gain_line(device);
+
+    ImGui::Spacing();
     draw_probe(app, device);
+
+    ImGui::Spacing();
+    look::heading("Cursor Idle / Entry Mode");
+    look::dim("How cursor behaves when returning to PC and re-entering Android:\n"
+              "- Parked: Hides in bottom-right corner while on PC, calculated from corner.\n"
+              "- Aligned: Stays at last exit position on edge, calculated from there.");
+    draw_row(app, KeyScope::both, "motion", "entry", &device, "Cursor mode");
+
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Advanced / ADB details")) {
+        const std::string proxy = status_of(app, device, "proxy");
+        const bool proxy_ready = !proxy.empty() && proxy != "off";
+        ImGui::BeginDisabled(!app.daemon_running || !proxy_ready || !app.filling.empty());
+        if (ImGui::Button("Fill from ADB"))
+            start_fill(app, device.serial);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (!proxy_ready)
+            look::dim("Connect the device and turn its ADB proxy on first.");
+        else
+            look::dim("Reads values automatically from Android via ADB.");
+
+        ImGui::Spacing();
+        draw_row(app, KeyScope::device, "detected", "diagonal_inch", &device, "Diagonal size");
+        draw_row(app, KeyScope::device, "detected", "density", &device, "Screen density");
+        draw_row(app, KeyScope::device, "detected", "pointer_speed", &device, "Android pointer speed");
+        draw_row(app, KeyScope::device, "detected", "accel", &device, "Pointer acceleration");
+        draw_row(app, KeyScope::device, "detected", "read_at", &device, "Last read at");
+    }
 }
 
 void draw_device_page(App& app, DeviceConfig& device) {
